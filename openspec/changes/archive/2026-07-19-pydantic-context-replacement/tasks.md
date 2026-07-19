@@ -51,11 +51,11 @@
 - [x] 5.9 Implement module-level `reset_context`, `stack_context`, `fresh_context`, `replace_context`, `stack_context_default`, `replace_context_default`, `context_stack`, and `context` singleton
 - [x] 5.10 Write tests for all `context-class` spec scenarios
 
-## 6. CondarC Write API
+## 6. CondaRC Write API
 
-- [x] 6.1 Create `src/conda_context/condarc.py` with `CondarC` class
-- [x] 6.2 Implement `CondarC.load(path)` using `ruamel.yaml` round-trip loader
-- [x] 6.3 Implement `CondarC.create(path)` for in-memory empty file construction
+- [x] 6.1 Create `src/conda_context/condarc.py` with `CondaRC` class
+- [x] 6.2 Implement `CondaRC.load(path)` using `ruamel.yaml` round-trip loader
+- [x] 6.3 Implement `CondaRC.create(path)` for in-memory empty file construction
 - [x] 6.4 Implement `get(key)` and `get_all()` for reading current in-memory values
 - [x] 6.5 Implement `set(key, value)` with immediate single-field type validation
 - [x] 6.6 Implement `unset(key)` as a no-op-safe key removal
@@ -92,6 +92,6 @@
 
 - [x] 9.1 Write an integration test that instantiates `Context` with a real conda 26.5.3 environment and asserts all public fields match the values returned by conda's own `context`
 - [x] 9.2 Write an integration test for `patch_module()` that calls it in a subprocess before any conda imports and verifies `conda.base.context.context` is the replacement
-- [x] 9.3 Write an end-to-end test for the `CondarC` write API: create a temp `.condarc`, mutate via `CondarC`, reload via `Context`, assert values round-trip correctly
+- [x] 9.3 Write an end-to-end test for the `CondaRC` write API: create a temp `.condarc`, mutate via `CondaRC`, reload via `Context`, assert values round-trip correctly
 - [x] 9.4 Verify the library imports cleanly in an environment without conda installed (only pydantic and ruamel.yaml present)
 - [x] 9.5 Run the full test suite against conda 26.5.3 installed via pixi and confirm all tests pass

@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-from conda_context.condarc import CondarC
+from conda_context.condarc import CondaRC
 from conda_context.context import Context
 
 # ---------------------------------------------------------------------------
@@ -92,16 +92,16 @@ print("OK")
 
 
 # ---------------------------------------------------------------------------
-# 9.3: End-to-end CondarC write → Context read round-trip
+# 9.3: End-to-end CondaRC write → Context read round-trip
 # ---------------------------------------------------------------------------
 
 
 def test_condarc_write_read_round_trip(tmp_path):
-    """Scenario: Create temp .condarc, mutate via CondarC, reload via Context."""
+    """Scenario: Create temp .condarc, mutate via CondaRC, reload via Context."""
     rc = tmp_path / ".condarc"
 
-    # Write via CondarC
-    CondarC.create(rc).set("offline", True).set("quiet", True).save()
+    # Write via CondaRC
+    CondaRC.create(rc).set("offline", True).set("quiet", True).save()
 
     # Read back via Context
     ctx = Context(search_path=(rc,))
@@ -110,9 +110,9 @@ def test_condarc_write_read_round_trip(tmp_path):
 
 
 def test_condarc_channel_prepend_round_trip(tmp_path):
-    """Channels written by CondarC are read correctly by Context."""
+    """Channels written by CondaRC are read correctly by Context."""
     rc = tmp_path / ".condarc"
-    c = CondarC.create(rc)
+    c = CondaRC.create(rc)
     c.set("channels", ["defaults"])
     c.prepend_channel("conda-forge")
     c.save()

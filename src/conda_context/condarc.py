@@ -1,5 +1,5 @@
 """
-CondarC — full CRUD API for .condarc files.
+CondaRC — full CRUD API for .condarc files.
 
 Uses ruamel.yaml in round-trip mode to preserve comments, key ordering,
 and formatting across save operations.
@@ -25,7 +25,7 @@ from .provenance import ProvenanceMap
 from .schemas._26_5_3 import CondaConfig
 
 
-class CondarC:
+class CondaRC:
     """Read/write interface for a single .condarc YAML file.
 
     Load an existing file with :meth:`load` or create a new one with
@@ -57,14 +57,14 @@ class CondarC:
     # ------------------------------------------------------------------
 
     @classmethod
-    def load(cls, path: Path | str) -> CondarC:
+    def load(cls, path: Path | str) -> CondaRC:
         """Load an existing .condarc file.
 
         Args:
             path: Path to the existing YAML file.
 
         Returns:
-            A ``CondarC`` instance backed by the file's contents.
+            A ``CondaRC`` instance backed by the file's contents.
 
         Raises:
             FileNotFoundError: If the file does not exist.
@@ -88,7 +88,7 @@ class CondarC:
         return cls(path=path, _data=data, _original=original)
 
     @classmethod
-    def create(cls, path: Path | str) -> CondarC:
+    def create(cls, path: Path | str) -> CondaRC:
         """Create a new in-memory .condarc targeting the given path.
 
         The file is NOT written to disk until :meth:`save` is called.
@@ -97,7 +97,7 @@ class CondarC:
             path: Target file path.
 
         Returns:
-            An empty ``CondarC`` instance.
+            An empty ``CondaRC`` instance.
         """
         return cls(path=Path(path), _data=CommentedMap(), _original={})
 
@@ -117,7 +117,7 @@ class CondarC:
     # Write (in-memory mutations)
     # ------------------------------------------------------------------
 
-    def set(self, key: str, value: Any) -> CondarC:
+    def set(self, key: str, value: Any) -> CondaRC:
         """Set a configuration key to ``value``.
 
         Performs immediate single-field type validation. Cross-field
@@ -137,7 +137,7 @@ class CondarC:
         self._data[key] = value
         return self
 
-    def unset(self, key: str) -> CondarC:
+    def unset(self, key: str) -> CondaRC:
         """Remove ``key`` from this file.  No-op if the key is not present.
 
         Returns:
@@ -146,7 +146,7 @@ class CondarC:
         self._data.pop(key, None)
         return self
 
-    def prepend_channel(self, channel: str) -> CondarC:
+    def prepend_channel(self, channel: str) -> CondaRC:
         """Prepend ``channel`` to the channels list in this file.
 
         Returns:
@@ -154,7 +154,7 @@ class CondarC:
         """
         return self.add_to("channels", channel, prepend=True)
 
-    def append_channel(self, channel: str) -> CondarC:
+    def append_channel(self, channel: str) -> CondaRC:
         """Append ``channel`` to the channels list in this file.
 
         Returns:
@@ -162,7 +162,7 @@ class CondarC:
         """
         return self.add_to("channels", channel, prepend=False)
 
-    def add_to(self, key: str, value: Any, prepend: bool = False) -> CondarC:
+    def add_to(self, key: str, value: Any, prepend: bool = False) -> CondaRC:
         """Add ``value`` to a sequence field.
 
         Args:
@@ -183,7 +183,7 @@ class CondarC:
         self._data[key] = current
         return self
 
-    def remove_from(self, key: str, value: Any) -> CondarC:
+    def remove_from(self, key: str, value: Any) -> CondaRC:
         """Remove ``value`` from a sequence field.  No-op if not present.
 
         Args:
@@ -222,7 +222,7 @@ class CondarC:
     # Save
     # ------------------------------------------------------------------
 
-    def save(self, strict: bool = True) -> CondarC:
+    def save(self, strict: bool = True) -> CondaRC:
         """Validate and write the file to disk atomically.
 
         Builds a candidate merged configuration (all on-disk condarc sources
@@ -262,7 +262,7 @@ class CondarC:
         self._original = {k: self._deep_copy_value(v) for k, v in self._data.items()}
         return self
 
-    def save_as(self, new_path: Path | str, strict: bool = True) -> CondarC:
+    def save_as(self, new_path: Path | str, strict: bool = True) -> CondaRC:
         """Write to a different path.
 
         Args:
@@ -270,9 +270,9 @@ class CondarC:
             strict: Passed to :meth:`save`.
 
         Returns:
-            A new ``CondarC`` instance pointing at ``new_path``.
+            A new ``CondaRC`` instance pointing at ``new_path``.
         """
-        new = CondarC(path=Path(new_path), _data=self._data, _original=self._original)
+        new = CondaRC(path=Path(new_path), _data=self._data, _original=self._original)
         new.save(strict=strict)
         return new
 
@@ -326,10 +326,10 @@ class CondarC:
     def _deep_copy_value(value: Any) -> Any:
         """Deep-copy a value to avoid aliasing issues."""
         if isinstance(value, dict):
-            return {k: CondarC._deep_copy_value(v) for k, v in value.items()}
+            return {k: CondaRC._deep_copy_value(v) for k, v in value.items()}
         if isinstance(value, list):
-            return [CondarC._deep_copy_value(v) for v in value]
+            return [CondaRC._deep_copy_value(v) for v in value]
         return value
 
     def __repr__(self) -> str:
-        return f"CondarC(path={self._path!r}, keys={list(self._data.keys())})"
+        return f"CondaRC(path={self._path!r}, keys={list(self._data.keys())})"

@@ -47,7 +47,7 @@ The initial target is conda **26.5.3** exactly. Each conda release maps to exact
 
 ---
 
-### D3: ruamel.yaml for CondarC write API
+### D3: ruamel.yaml for CondaRC write API
 
 **Decision:** All `.condarc` file writes use `ruamel.yaml` in round-trip mode.
 
@@ -59,13 +59,13 @@ The initial target is conda **26.5.3** exactly. Each conda release maps to exact
 
 ### D4: Write API validates against full merged context (snapshot)
 
-**Decision:** `CondarC.save()` builds a candidate merged config (current on-disk state + pending mutations applied in-memory), runs it through `MergeEngine` + `CondaConfig` validation, and only writes on success.
+**Decision:** `CondaRC.save()` builds a candidate merged config (current on-disk state + pending mutations applied in-memory), runs it through `MergeEngine` + `CondaConfig` validation, and only writes on success.
 
 **Rationale:** Some validation rules are cross-field (`always_copy` and `always_softlink` are mutually exclusive; `client_ssl_cert_key` requires `client_ssl_cert`). These can only be caught by validating the full merged state, not a single field in isolation.
 
 **Circular dependency note:** The in-memory candidate is fully constructed before any disk write occurs, so there is no risk of reading a partially-written file during validation.
 
-**Alternative considered:** Eager validation on `set()` (before `save()`). Retained as an *additional* option — `CondarC` will validate immediately on `set()` for single-field constraints (type, enum membership) and defer cross-field constraints to `save()`.
+**Alternative considered:** Eager validation on `set()` (before `save()`). Retained as an *additional* option — `CondaRC` will validate immediately on `set()` for single-field constraints (type, enum membership) and defer cross-field constraints to `save()`.
 
 ---
 
@@ -109,7 +109,7 @@ The initial target is conda **26.5.3** exactly. Each conda release maps to exact
 
 - **Computed property parity gaps** → Some computed properties in conda involve deep internal logic (e.g., `channels` resolves aliases, deduplicates, validates allowlist/denylist using `Channel` model objects). Full parity requires either reimplementing or importing from conda. For the monkey-patch use case, importing from conda is fine; for standalone use in plugins without conda installed, these properties must be self-contained. Mitigation: mark properties that require conda as `requires_conda=True` in docstrings; raise a clear `ImportError` with instructions if accessed without conda present.
 
-- **Cross-field validation on write** → Validating the full merged context on `CondarC.save()` means that an invalid *existing* config (pre-existing error in another condarc layer) can block writes of unrelated fields. Mitigation: provide a `CondarC.save(strict=False)` option that only validates the fields being mutated.
+- **Cross-field validation on write** → Validating the full merged context on `CondaRC.save()` means that an invalid *existing* config (pre-existing error in another condarc layer) can block writes of unrelated fields. Mitigation: provide a `CondaRC.save(strict=False)` option that only validates the fields being mutated.
 
 ## Migration Plan
 

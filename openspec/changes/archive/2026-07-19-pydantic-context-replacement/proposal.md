@@ -8,7 +8,7 @@
 - **Pydantic-backed `CondaConfig` model** — all 60+ configuration fields from conda 26.5.3 typed, documented, and validated via Pydantic v2.
 - **`MergeEngine`** — resolves conda's layered configuration sources (system condarc → user condarc → env condarc → env vars → CLI args) in priority order, producing a merged dict alongside a `ProvenanceMap` that records the origin file path, line number, or environment variable name for every resolved value.
 - **`Context` class** — mirrors conda's existing `Context` public and private API surface (including `_cache_`, `raw_data`, `_argparse_args`, `_set_search_path()`, `_reset_cache()`, etc.) and all computed properties, delegating validation to `CondaConfig`.
-- **`CondarC` write API** — full CRUD for `.condarc` files using `ruamel.yaml` for comment-preserving round-trips; validates proposed mutations against the full merged context before writing.
+- **`CondaRC` write API** — full CRUD for `.condarc` files using `ruamel.yaml` for comment-preserving round-trips; validates proposed mutations against the full merged context before writing.
 - **`CondaConfigError`** — enriched error type wrapping Pydantic `ValidationError` with provenance data; human-readable `__str__` and machine-readable `.as_dict()`.
 - **`patch` module** — thin helpers for monkey-patching `conda.base.context` at plugin entry point time (module-attribute replacement) and an import hook for earlier patching.
 - **Schema generator (`generator/`)** — dev tool that reads conda source at a given Git tag and emits a versioned `schemas/_XX_X_X.py`; one conda release = one `conda-context` release.
