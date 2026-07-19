@@ -88,16 +88,19 @@ class TestPatchModuleIdempotency:
     def setup_method(self):
         """Reset patched state before each test."""
         import conda_context.patch as p
+
         p._PATCHED = False
 
     def teardown_method(self):
         """Reset patched state after each test."""
         import conda_context.patch as p
+
         p._PATCHED = False
 
     def test_patch_module_idempotent_when_conda_absent(self):
         """Scenario: Second call to patch_module is no-op if first raises."""
         import conda_context.patch as p
+
         p._PATCHED = True  # simulate already patched
         # Should return immediately without raising
         patch_module()
@@ -112,15 +115,16 @@ class TestPatchModuleIdempotency:
 class TestLatePatchWarning:
     def setup_method(self):
         import conda_context.patch as p
+
         p._PATCHED = False
 
     def teardown_method(self):
         import conda_context.patch as p
+
         p._PATCHED = False
 
     def test_warning_emitted_when_direct_binding_module_present(self, monkeypatch):
         """Scenario: Warning emitted when patching late."""
-        import conda_context.patch as p
 
         # Pretend one of the direct-binding modules is already imported
         fake_module = types.ModuleType("conda.cli.main")
@@ -156,10 +160,12 @@ class TestLatePatchWarning:
 class TestPatchModuleIntegration:
     def setup_method(self):
         import conda_context.patch as p
+
         p._PATCHED = False
 
     def teardown_method(self):
         import conda_context.patch as p
+
         unpatch_module()
         p._PATCHED = False
 
@@ -167,20 +173,25 @@ class TestPatchModuleIntegration:
         """Scenario: Patch replaces module-level context singleton."""
         patch_module()
         import conda.base.context as conda_ctx
+
         from conda_context.context import Context as CCContext
+
         assert isinstance(conda_ctx.context, CCContext)
 
     def test_patch_replaces_context_class(self):
         """Scenario: Patch replaces module-level Context class."""
         patch_module()
         import conda.base.context as conda_ctx
+
         from conda_context.context import Context as CCContext
+
         assert conda_ctx.Context is CCContext
 
     def test_context_management_functions_callable(self):
         """Scenario: Re-exported context management functions remain callable."""
         patch_module()
         import conda.base.context as conda_ctx
+
         assert callable(conda_ctx.reset_context)
         assert callable(conda_ctx.stack_context)
         assert callable(conda_ctx.fresh_context)

@@ -39,7 +39,7 @@ from conda_context.constants import (
 
 def _default_python_default() -> str:
     ver = sys.version_info
-    return "%d.%d" % (ver.major, ver.minor)
+    return f"{ver.major}.{ver.minor}"
 
 
 class CondaConfig(BaseModel):
@@ -664,9 +664,7 @@ class CondaConfig(BaseModel):
 
             parsed = urlparse(v)
             if not parsed.scheme:
-                raise ValueError(
-                    f"channel_alias value '{v}' must have scheme/protocol."
-                )
+                raise ValueError(f"channel_alias value '{v}' must have scheme/protocol.")
         return v
 
     @field_validator("default_python", mode="before")
@@ -682,15 +680,13 @@ class CondaConfig(BaseModel):
                     return v
             except ValueError:
                 pass
-        raise ValueError(
-            f"default_python value '{v}' not of the form '[23].[0-9][0-9]?' or ''"
-        )
+        raise ValueError(f"default_python value '{v}' not of the form '[23].[0-9][0-9]?' or ''")
 
     @field_validator("list_fields", mode="before")
     @classmethod
     def _validate_list_fields(cls, v: Any) -> Any:
         """Validate list_fields: all values must be valid conda list column names."""
-        if isinstance(v, (list, tuple)):
+        if isinstance(v, list | tuple):
             invalid = set(v).difference(CONDA_LIST_FIELDS)
             if invalid:
                 raise ValueError(
@@ -704,7 +700,7 @@ class CondaConfig(BaseModel):
     # ------------------------------------------------------------------
 
     @model_validator(mode="after")
-    def _cross_field_validation(self) -> "CondaConfig":
+    def _cross_field_validation(self) -> CondaConfig:
         """Enforce cross-field constraints from conda's post_build_validation."""
         errors: list[str] = []
 
@@ -715,9 +711,7 @@ class CondaConfig(BaseModel):
             )
 
         if self.client_ssl_cert_key and not self.client_ssl_cert:
-            errors.append(
-                "'client_ssl_cert' is required when 'client_ssl_cert_key' is defined"
-            )
+            errors.append("'client_ssl_cert' is required when 'client_ssl_cert_key' is defined")
 
         if errors:
             raise ValueError("\n".join(errors))

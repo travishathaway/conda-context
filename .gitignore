@@ -63,9 +63,9 @@ dmypy.json
 Thumbs.db
 
 # ---------------------------------------------------------------------------
-# Secrets baseline (detect-secrets)
+# Secrets baseline (detect-secrets) — committed intentionally
 # ---------------------------------------------------------------------------
-.secrets.baseline
+# .secrets.baseline is intentionally tracked; do not add it here
 
 # ---------------------------------------------------------------------------
 # Jupyter

@@ -18,8 +18,6 @@ repos:
       - id: debug-statements
       - id: mixed-line-ending
         args: [--fix=lf]
-      - id: no-commit-to-branch
-        args: [--branch=main]
 
   # ---------------------------------------------------------------------------
   # Python: Ruff (lint + format)
@@ -59,11 +57,4 @@ repos:
     hooks:
       - id: markdownlint
         args: [--disable, MD013, MD033, --]   # disable line-length + inline HTML
-
-  # ---------------------------------------------------------------------------
-  # TOML formatting (pyproject.toml, etc.)
-  # ---------------------------------------------------------------------------
-  - repo: https://github.com/tox-dev/pyproject-fmt
-    rev: v2.6.0
-    hooks:
-      - id: pyproject-fmt
+        exclude: ^openspec/

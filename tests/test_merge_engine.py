@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from argparse import Namespace
 from pathlib import Path
 
-import pytest
-
 from conda_context.merge import MergeEngine
-from conda_context.provenance import ProvenanceInfo
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -65,9 +60,7 @@ class TestSourcePriority:
 class TestSequenceMerge:
     def test_channels_prepend(self, tmp_path):
         """Scenario: Channels from user condarc prepend system channels."""
-        system_rc = _write_condarc(
-            tmp_path, "system.condarc", "channels:\n  - defaults\n"
-        )
+        system_rc = _write_condarc(tmp_path, "system.condarc", "channels:\n  - defaults\n")
         user_rc = _write_condarc(tmp_path, "user.condarc", "channels:\n  - pytorch\n")
         engine = MergeEngine(search_path=(system_rc, user_rc), environ={})
         merged, _ = engine.resolve()
@@ -75,9 +68,7 @@ class TestSequenceMerge:
 
     def test_append_flag_puts_items_at_end(self, tmp_path):
         """Scenario: List append flag overrides prepend."""
-        system_rc = _write_condarc(
-            tmp_path, "system.condarc", "channels:\n  - defaults\n"
-        )
+        system_rc = _write_condarc(tmp_path, "system.condarc", "channels:\n  - defaults\n")
         user_rc = _write_condarc(
             tmp_path,
             "user.condarc",
@@ -96,12 +87,8 @@ class TestSequenceMerge:
 class TestMapMerge:
     def test_distinct_keys_both_present(self, tmp_path):
         """Scenario: Distinct keys from two sources are both present."""
-        system_rc = _write_condarc(
-            tmp_path, "sys.condarc", "proxy_servers:\n  http: proxy1\n"
-        )
-        user_rc = _write_condarc(
-            tmp_path, "user.condarc", "proxy_servers:\n  https: proxy2\n"
-        )
+        system_rc = _write_condarc(tmp_path, "sys.condarc", "proxy_servers:\n  http: proxy1\n")
+        user_rc = _write_condarc(tmp_path, "user.condarc", "proxy_servers:\n  https: proxy2\n")
         engine = MergeEngine(search_path=(system_rc, user_rc), environ={})
         merged, _ = engine.resolve()
         assert "http" in merged["proxy_servers"]
@@ -109,12 +96,8 @@ class TestMapMerge:
 
     def test_key_collision_higher_priority_wins(self, tmp_path):
         """Scenario: Key collision resolved by priority."""
-        system_rc = _write_condarc(
-            tmp_path, "sys.condarc", "proxy_servers:\n  http: proxy1\n"
-        )
-        user_rc = _write_condarc(
-            tmp_path, "user.condarc", "proxy_servers:\n  http: proxy2\n"
-        )
+        system_rc = _write_condarc(tmp_path, "sys.condarc", "proxy_servers:\n  http: proxy1\n")
+        user_rc = _write_condarc(tmp_path, "user.condarc", "proxy_servers:\n  http: proxy2\n")
         engine = MergeEngine(search_path=(system_rc, user_rc), environ={})
         merged, _ = engine.resolve()
         assert merged["proxy_servers"]["http"] == "proxy2"
@@ -175,9 +158,7 @@ class TestSearchPathExpansion:
 
     def test_nonexistent_path_silently_skipped(self):
         """Scenario: Non-existent paths are silently skipped."""
-        engine = MergeEngine(
-            search_path=(Path("/nonexistent/.condarc"),), environ={}
-        )
+        engine = MergeEngine(search_path=(Path("/nonexistent/.condarc"),), environ={})
         merged, _ = engine.resolve()
         assert merged == {}
 

@@ -8,13 +8,11 @@ configuration files (or environment variables) the bad value came from.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from pydantic import ValidationError
 
 from .provenance import ProvenanceInfo, ProvenanceMap
-
 
 # ---------------------------------------------------------------------------
 # Hint generation helpers
@@ -167,7 +165,7 @@ class CondaConfigError(Exception):
             hint = _generate_hint(str(field_name), raw_value)
             if hint is None:
                 # Try cross-field hint using all field names in this error batch
-                hint = _hint_for_cross_field([str(l) for l in loc])
+                hint = _hint_for_cross_field([str(loc_item) for loc_item in loc])
 
             source: dict[str, Any] = {}
             if prov is not None:

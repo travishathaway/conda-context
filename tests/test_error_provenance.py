@@ -11,7 +11,6 @@ from pydantic import BaseModel, ValidationError, field_validator
 from conda_context.errors import CondaConfigError
 from conda_context.provenance import ProvenanceInfo, ProvenanceMap
 
-
 # ---------------------------------------------------------------------------
 # Minimal Pydantic model for testing
 # ---------------------------------------------------------------------------
@@ -46,9 +45,7 @@ def _make_error(data: dict, provenance: ProvenanceMap | None = None) -> CondaCon
 
 class TestProvenanceInfo:
     def test_yaml_file_describe(self):
-        prov = ProvenanceInfo(
-            source_type="yaml_file", path=Path("/home/user/.condarc"), line=7
-        )
+        prov = ProvenanceInfo(source_type="yaml_file", path=Path("/home/user/.condarc"), line=7)
         desc = prov.describe()
         assert "/home/user/.condarc" in desc
         assert "7" in desc
@@ -186,9 +183,11 @@ class TestHintGeneration:
             pytest.fail("expected error")
         except Exception as exc:
             from pydantic import ValidationError
+
             if not isinstance(exc, ValidationError):
                 pytest.skip("always_copy='yess' did not raise ValidationError")
             from conda_context.errors import CondaConfigError
+
             err = CondaConfigError(exc, {})
         entry = err.as_dict()[0]
         assert entry["hint"] is not None
@@ -199,6 +198,7 @@ class TestHintGeneration:
         # Pydantic v2 coerces "no" to False for bool fields.
         # Use a value that is false-like but also unambiguously invalid.
         from conda_context.errors import _generate_hint
+
         hint = _generate_hint("always_copy", "no")
         assert hint is not None
         assert "false" in hint.lower()

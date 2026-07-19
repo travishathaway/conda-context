@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from conda_context.generator.__main__ import (
     FieldSpec,
@@ -16,7 +12,18 @@ from conda_context.generator.__main__ import (
 )
 
 # Minimal conda context.py snippet for testing
-_MINIMAL_CONTEXT_SOURCE = """\nclass Context:\n    add_pip_as_python_dependency = ParameterLoader(PrimitiveParameter(True))\n    _channels = ParameterLoader(\n        SequenceParameter(PrimitiveParameter("", element_type=str), default=()),\n        aliases=("channels", "channel"),\n    )\n    proxy_servers = ParameterLoader(\n        MapParameter(PrimitiveParameter(None, (str, NoneType))),\n    )\n    always_copy = ParameterLoader(PrimitiveParameter(False), aliases=("copy",))\n"""
+_MINIMAL_CONTEXT_SOURCE = (
+    "\nclass Context:\n"
+    "    add_pip_as_python_dependency = ParameterLoader(PrimitiveParameter(True))\n"
+    "    _channels = ParameterLoader(\n"
+    '        SequenceParameter(PrimitiveParameter("", element_type=str), default=()),\n'
+    '        aliases=("channels", "channel"),\n'
+    "    )\n"
+    "    proxy_servers = ParameterLoader(\n"
+    "        MapParameter(PrimitiveParameter(None, (str, NoneType))),\n"
+    "    )\n"
+    '    always_copy = ParameterLoader(PrimitiveParameter(False), aliases=("copy",))\n'
+)
 
 
 class TestExtractFields:
@@ -67,8 +74,9 @@ class TestEmitSchema:
         code = emit_schema(fields, "26.5.3")
         lines = code.splitlines()
         conda_imports = [
-            l for l in lines
-            if l.startswith("from conda.") or l.startswith("import conda.")
+            line
+            for line in lines
+            if line.startswith("from conda.") or line.startswith("import conda.")
         ]
         assert len(conda_imports) == 0
 

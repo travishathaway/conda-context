@@ -57,7 +57,7 @@ class CondarC:
     # ------------------------------------------------------------------
 
     @classmethod
-    def load(cls, path: Path | str) -> "CondarC":
+    def load(cls, path: Path | str) -> CondarC:
         """Load an existing .condarc file.
 
         Args:
@@ -76,7 +76,7 @@ class CondarC:
 
         yaml = YAML()
         yaml.preserve_quotes = True
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             data = yaml.load(fh)
 
         if data is None:
@@ -88,7 +88,7 @@ class CondarC:
         return cls(path=path, _data=data, _original=original)
 
     @classmethod
-    def create(cls, path: Path | str) -> "CondarC":
+    def create(cls, path: Path | str) -> CondarC:
         """Create a new in-memory .condarc targeting the given path.
 
         The file is NOT written to disk until :meth:`save` is called.
@@ -117,7 +117,7 @@ class CondarC:
     # Write (in-memory mutations)
     # ------------------------------------------------------------------
 
-    def set(self, key: str, value: Any) -> "CondarC":
+    def set(self, key: str, value: Any) -> CondarC:
         """Set a configuration key to ``value``.
 
         Performs immediate single-field type validation. Cross-field
@@ -137,7 +137,7 @@ class CondarC:
         self._data[key] = value
         return self
 
-    def unset(self, key: str) -> "CondarC":
+    def unset(self, key: str) -> CondarC:
         """Remove ``key`` from this file.  No-op if the key is not present.
 
         Returns:
@@ -146,7 +146,7 @@ class CondarC:
         self._data.pop(key, None)
         return self
 
-    def prepend_channel(self, channel: str) -> "CondarC":
+    def prepend_channel(self, channel: str) -> CondarC:
         """Prepend ``channel`` to the channels list in this file.
 
         Returns:
@@ -154,7 +154,7 @@ class CondarC:
         """
         return self.add_to("channels", channel, prepend=True)
 
-    def append_channel(self, channel: str) -> "CondarC":
+    def append_channel(self, channel: str) -> CondarC:
         """Append ``channel`` to the channels list in this file.
 
         Returns:
@@ -162,7 +162,7 @@ class CondarC:
         """
         return self.add_to("channels", channel, prepend=False)
 
-    def add_to(self, key: str, value: Any, prepend: bool = False) -> "CondarC":
+    def add_to(self, key: str, value: Any, prepend: bool = False) -> CondarC:
         """Add ``value`` to a sequence field.
 
         Args:
@@ -183,7 +183,7 @@ class CondarC:
         self._data[key] = current
         return self
 
-    def remove_from(self, key: str, value: Any) -> "CondarC":
+    def remove_from(self, key: str, value: Any) -> CondarC:
         """Remove ``value`` from a sequence field.  No-op if not present.
 
         Args:
@@ -222,7 +222,7 @@ class CondarC:
     # Save
     # ------------------------------------------------------------------
 
-    def save(self, strict: bool = True) -> "CondarC":
+    def save(self, strict: bool = True) -> CondarC:
         """Validate and write the file to disk atomically.
 
         Builds a candidate merged configuration (all on-disk condarc sources
@@ -262,7 +262,7 @@ class CondarC:
         self._original = {k: self._deep_copy_value(v) for k, v in self._data.items()}
         return self
 
-    def save_as(self, new_path: Path | str, strict: bool = True) -> "CondarC":
+    def save_as(self, new_path: Path | str, strict: bool = True) -> CondarC:
         """Write to a different path.
 
         Args:
@@ -286,9 +286,10 @@ class CondarC:
             CondaConfig(**{key: value})
         except ValidationError as exc:
             # Only surface errors for this specific field
-            field_errors = [e for e in exc.errors(include_url=False) if e["loc"] and str(e["loc"][0]) == key]
+            field_errors = [
+                e for e in exc.errors(include_url=False) if e["loc"] and str(e["loc"][0]) == key
+            ]
             if field_errors:
-                from pydantic import ValidationError as VE
                 raise CondaConfigError(exc, {}) from exc
 
     def _build_candidate(self) -> dict[str, Any]:

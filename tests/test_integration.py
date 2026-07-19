@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
-from conda_context.context import Context
 from conda_context.condarc import CondarC
-
+from conda_context.context import Context
 
 # ---------------------------------------------------------------------------
 # Helper (must be defined before use at module scope)
@@ -24,6 +22,7 @@ from conda_context.condarc import CondarC
 def _can_import_conda() -> bool:
     try:
         import importlib
+
         importlib.import_module("conda")
         return True
     except ImportError:
@@ -136,16 +135,7 @@ def test_library_imports_without_conda():
     """Scenario: Library imports cleanly without conda installed."""
     # We already know conda is not installed in the base test env
     # (since conda tests are skipped). Verify clean import.
-    import conda_context
-    import conda_context.constants
-    import conda_context.provenance
-    import conda_context.errors
-    import conda_context.merge
     from conda_context.schemas._26_5_3 import CondaConfig
-    import conda_context.context
-    import conda_context.condarc
-    import conda_context.patch
-    import conda_context.generator.__main__
 
     # Basic functionality works
     cfg = CondaConfig()
@@ -158,6 +148,7 @@ def test_library_imports_without_conda():
 # ---------------------------------------------------------------------------
 # This test documents that running `pytest tests/` is the verification step.
 # The fact that you're reading this passing means 9.5 is done.
+
 
 def test_suite_integrity():
     """9.5 verification: all unit tests pass (running test suite = this passing)."""

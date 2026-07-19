@@ -20,11 +20,12 @@ import platform
 import struct
 import sys
 from argparse import Namespace
+from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import cached_property
 from os.path import abspath, expanduser, isdir, isfile, join
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -33,6 +34,8 @@ from .constants import (
     DEFAULT_CHANNELS_UNIX,
     DEFAULT_CHANNELS_WIN,
     ROOT_ENV_NAME,
+)
+from .constants import (
     SEARCH_PATH as _FALLBACK_SEARCH_PATH,
 )
 from .errors import CondaConfigError
@@ -44,7 +47,9 @@ log = logging.getLogger(__name__)
 
 # Try to get the actual search path from conda if available
 try:
-    from conda.base.constants import SEARCH_PATH as _DEFAULT_SEARCH_PATH  # type: ignore[import]
+    from conda.base.constants import (
+        SEARCH_PATH as _DEFAULT_SEARCH_PATH,  # type: ignore[import]
+    )
 except ImportError:
     _DEFAULT_SEARCH_PATH = _FALLBACK_SEARCH_PATH
 _non_x86_machines = frozenset(
@@ -94,7 +99,9 @@ KNOWN_SUBDIRS = frozenset(
 
 # Try to get the actual search path from conda if available
 try:
-    from conda.base.constants import SEARCH_PATH as _DEFAULT_SEARCH_PATH  # type: ignore[import]
+    from conda.base.constants import (
+        SEARCH_PATH as _DEFAULT_SEARCH_PATH,  # type: ignore[import]
+    )
 except ImportError:
     _DEFAULT_SEARCH_PATH = _FALLBACK_SEARCH_PATH
 
@@ -137,9 +144,7 @@ class Context:
         self._reset_callbacks: dict[Any, None] = {}
         self._validation_errors: list[Any] = []
 
-        self._set_search_path(
-            _DEFAULT_SEARCH_PATH if search_path is None else search_path
-        )
+        self._set_search_path(_DEFAULT_SEARCH_PATH if search_path is None else search_path)
         self._set_env_vars(APP_NAME)
         self._set_argparse_args(argparse_args)
 
@@ -151,17 +156,17 @@ class Context:
         self,
         search_path: tuple[str | Path, ...],
         **kwargs: Any,
-    ) -> "Context":
+    ) -> Context:
         self._search_path = tuple(search_path)
         self._rebuild()
         return self
 
-    def _set_env_vars(self, app_name: str | None = None) -> "Context":
+    def _set_env_vars(self, app_name: str | None = None) -> Context:
         self._app_name = app_name
         self._rebuild()
         return self
 
-    def _set_argparse_args(self, argparse_args: Namespace | None) -> "Context":
+    def _set_argparse_args(self, argparse_args: Namespace | None) -> Context:
         if hasattr(argparse_args, "__dict__"):
             items = vars(argparse_args).items()
         elif not argparse_args:
@@ -181,9 +186,7 @@ class Context:
             if key.startswith("_") and not key.startswith("__"):
                 continue
             # Remove cached_property cache entries
-            if key in type(self).__dict__ and isinstance(
-                type(self).__dict__[key], cached_property
-            ):
+            if key in type(self).__dict__ and isinstance(type(self).__dict__[key], cached_property):
                 self.__dict__.pop(key, None)
 
     def _rebuild(self) -> None:
@@ -693,7 +696,7 @@ class Context:
             return f"{self.platform}-{m}"
         elif self.platform == "zos":
             return "zos-z"
-        return "%s-%d" % (self.platform, self.bits)
+        return f"{self.platform}-{self.bits}"
 
     @property
     def subdirs(self) -> tuple[str, str]:
@@ -777,8 +780,7 @@ class Context:
     @property
     def create_default_packages(self) -> tuple[str, ...]:
         return tuple(
-            pkg for pkg in self._create_default_packages
-            if pkg not in self.pinned_packages
+            pkg for pkg in self._create_default_packages if pkg not in self.pinned_packages
         )
 
     @property
@@ -822,6 +824,7 @@ class Context:
         """
         try:
             from conda.base.context import validate_channels  # type: ignore[import]
+
             local_channels: tuple[str, ...] = ("local",) if self.use_local else ()
             return validate_channels((*local_channels, *self._channels))
         except ImportError:
@@ -834,8 +837,8 @@ class Context:
         Requires conda. Returns raw string when conda unavailable.
         """
         try:
-            from conda.models.channel import Channel  # type: ignore[import]
             from conda.common.url import split_scheme_auth_token  # type: ignore[import]
+            from conda.models.channel import Channel  # type: ignore[import]
 
             location, scheme, auth, token = split_scheme_auth_token(self._channel_alias)
             return Channel(scheme=scheme, auth=auth, location=location, token=token)
@@ -846,8 +849,8 @@ class Context:
     def migrated_channel_aliases(self) -> tuple:
         """Requires conda for Channel objects. Returns raw strings otherwise."""
         try:
-            from conda.models.channel import Channel  # type: ignore[import]
             from conda.common.url import split_scheme_auth_token  # type: ignore[import]
+            from conda.models.channel import Channel  # type: ignore[import]
 
             return tuple(
                 Channel(scheme=scheme, auth=auth, location=location, token=token)
@@ -901,8 +904,9 @@ class Context:
     def custom_channels(self) -> dict:
         """Requires conda for Channel model objects."""
         try:
-            from conda.models.channel import Channel  # type: ignore[import]
             from itertools import chain
+
+            from conda.models.channel import Channel  # type: ignore[import]
 
             channel_alias = self.channel_alias
             return {
@@ -962,11 +966,7 @@ class Context:
             join(self.root_prefix, "conda-bld"),
             "~/conda-bld",
         ]
-        return tuple(
-            _unique(
-                _expand(d) for d in candidates if d and isdir(_expand(d))
-            )
-        )
+        return tuple(_unique(_expand(d) for d in candidates if d and isdir(_expand(d))))
 
     @property
     def conda_build_local_urls(self) -> tuple[str, ...]:
@@ -975,9 +975,7 @@ class Context:
 
             return tuple(path_to_url(p) for p in self.conda_build_local_paths)
         except ImportError:
-            return tuple(
-                f"file://{p}" for p in self.conda_build_local_paths
-            )
+            return tuple(f"file://{p}" for p in self.conda_build_local_paths)
 
     # ------------------------------------------------------------------
     # Tier 2: Filesystem-interrogating computed properties
@@ -1030,9 +1028,7 @@ class Context:
                 fixed_dirs.append(join(user_data_dir(APP_NAME, APP_NAME), "envs"))
             except ImportError:
                 pass
-        return tuple(
-            dict.fromkeys(_expand(p) for p in (*self._envs_dirs, *fixed_dirs))
-        )
+        return tuple(dict.fromkeys(_expand(p) for p in (*self._envs_dirs, *fixed_dirs)))
 
     @property
     def pkgs_dirs(self) -> tuple[str, ...]:
@@ -1119,9 +1115,7 @@ class Context:
         """Return validation errors list (API compatibility with conda's Configuration)."""
         errors = []
         if self.client_ssl_cert_key and not self.client_ssl_cert:
-            errors.append(
-                {"field": "client_ssl_cert", "message": "'client_ssl_cert' is required"}
-            )
+            errors.append({"field": "client_ssl_cert", "message": "'client_ssl_cert' is required"})
         if self.always_copy and self.always_softlink:
             errors.append(
                 {
@@ -1189,9 +1183,7 @@ def reset_context(
     argparse_args: Namespace | None = None,
 ) -> None:
     """Reset the global context singleton."""
-    context._set_search_path(
-        _DEFAULT_SEARCH_PATH if search_path is None else search_path
-    )
+    context._set_search_path(_DEFAULT_SEARCH_PATH if search_path is None else search_path)
     context._set_argparse_args(argparse_args)
 
 

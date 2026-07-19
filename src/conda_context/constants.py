@@ -11,7 +11,6 @@ import sys
 from enum import Enum, EnumMeta
 from typing import Final
 
-
 # ---------------------------------------------------------------------------
 # Enum helpers
 # ---------------------------------------------------------------------------
@@ -111,9 +110,7 @@ DEFAULT_CHANNELS_WIN: Final = (
     "https://repo.anaconda.com/pkgs/msys2",
 )
 
-DEFAULT_CHANNELS: Final = (
-    DEFAULT_CHANNELS_WIN if sys.platform == "win32" else DEFAULT_CHANNELS_UNIX
-)
+DEFAULT_CHANNELS: Final = DEFAULT_CHANNELS_WIN if sys.platform == "win32" else DEFAULT_CHANNELS_UNIX
 
 DEFAULT_CUSTOM_CHANNELS: Final = {
     "pkgs/pro": "https://repo.anaconda.com",

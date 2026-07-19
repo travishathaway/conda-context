@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 # Sentinel used by conda for append/prepend flags in YAML sequences.
 # e.g.  channels:
-#         - defaults      # noqa: yaml-sequence-flag
+#         - defaults
 # We detect the special strings conda uses in its raw parameter system.
 _PREPEND_MARKER = "prepend"
 _APPEND_MARKER = "append"
@@ -304,9 +304,7 @@ class MergeEngine:
     # Search path expansion
     # ------------------------------------------------------------------
 
-    def _expand_search_path(
-        self, search_path: tuple[str | Path, ...]
-    ) -> list[Path]:
+    def _expand_search_path(self, search_path: tuple[str | Path, ...]) -> list[Path]:
         """Expand search path entries, yielding concrete YAML file paths."""
         result: list[Path] = []
         seen: set[Path] = set()
@@ -321,10 +319,7 @@ class MergeEngine:
             if stat.S_ISREG(mode):
                 # Accept: exact condarc filenames, .yml/.yaml extensions, or .condarc extension
                 _condarc_exts = (*YAML_EXTENSIONS, ".condarc")
-                if (
-                    path.name in CONDARC_FILENAMES
-                    or path.suffix in _condarc_exts
-                ):
+                if path.name in CONDARC_FILENAMES or path.suffix in _condarc_exts:
                     if path not in seen:
                         seen.add(path)
                         result.append(path)
@@ -335,7 +330,8 @@ class MergeEngine:
                     continue
                 for child in entries:
                     if child.is_file() and (
-                        child.name in CONDARC_FILENAMES or child.suffix in (*YAML_EXTENSIONS, ".condarc")
+                        child.name in CONDARC_FILENAMES
+                        or child.suffix in (*YAML_EXTENSIONS, ".condarc")
                     ):
                         if child not in seen:
                             seen.add(child)
@@ -347,18 +343,16 @@ class MergeEngine:
     # YAML file loading
     # ------------------------------------------------------------------
 
-    def _load_yaml_file(
-        self, path: Path
-    ) -> tuple[dict[str, Any], dict[str, ProvenanceInfo]]:
+    def _load_yaml_file(self, path: Path) -> tuple[dict[str, Any], dict[str, ProvenanceInfo]]:
         """Load a YAML file, returning (data_dict, provenance_dict)."""
         try:
-            with open(path, "r", encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 raw = self._yaml.load(fh)
         except Exception as exc:
             log.warning("Ignoring configuration file (%s) due to error: %s", path, exc)
             return {}, {}
 
-        if not isinstance(raw, (dict, CommentedMap)):
+        if not isinstance(raw, dict | CommentedMap):
             return {}, {}
 
         data: dict[str, Any] = {}
@@ -375,9 +369,7 @@ class MergeEngine:
                     pass
 
             data[field_name] = self._convert_ruamel(value)
-            prov[field_name] = ProvenanceInfo(
-                source_type="yaml_file", path=path, line=line
-            )
+            prov[field_name] = ProvenanceInfo(source_type="yaml_file", path=path, line=line)
 
         return data, prov
 
@@ -385,7 +377,7 @@ class MergeEngine:
         """Convert ruamel.yaml types to plain Python types."""
         if isinstance(value, CommentedMap):
             return {k: self._convert_ruamel(v) for k, v in value.items()}
-        if isinstance(value, (CommentedSeq, list)):
+        if isinstance(value, CommentedSeq | list):
             return [self._convert_ruamel(v) for v in value]
         return value
 
@@ -406,9 +398,7 @@ class MergeEngine:
                 continue
             coerced = _coerce_env_var(field_name, raw_value)
             data[field_name] = coerced
-            prov[field_name] = ProvenanceInfo(
-                source_type="env_var", env_var=env_name
-            )
+            prov[field_name] = ProvenanceInfo(source_type="env_var", env_var=env_name)
 
         return data, prov
 
@@ -416,9 +406,7 @@ class MergeEngine:
     # Argparse loading
     # ------------------------------------------------------------------
 
-    def _load_argparse(
-        self, args: Namespace
-    ) -> tuple[dict[str, Any], dict[str, ProvenanceInfo]]:
+    def _load_argparse(self, args: Namespace) -> tuple[dict[str, Any], dict[str, ProvenanceInfo]]:
         """Extract non-None values from argparse Namespace."""
         data: dict[str, Any] = {}
         prov: dict[str, ProvenanceInfo] = {}

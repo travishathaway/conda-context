@@ -5,9 +5,7 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 
-import pytest
-
-from conda_context.context import Context, fresh_context, reset_context, stack_context
+from conda_context.context import Context, fresh_context, stack_context
 
 
 def _write_condarc(tmp_path: Path, name: str, content: str) -> Path:
@@ -106,11 +104,13 @@ class TestContextManagement:
 
 def _get_context_offline() -> bool:
     from conda_context import context as ctx_module
+
     return ctx_module.context.offline
 
 
 def _get_current_context() -> Context:
     from conda_context import context as ctx_module
+
     return ctx_module.context
 
 
@@ -167,6 +167,7 @@ class TestTier2ComputedProperties:
 
     def test_conda_prefix_is_sys_prefix(self):
         import sys
+
         ctx = Context((), None)
         assert ctx.conda_prefix == __import__("os.path", fromlist=["abspath"]).abspath(sys.prefix)
 
@@ -180,4 +181,5 @@ class TestModuleLevelSingleton:
     def test_module_context_is_context_instance(self):
         """Scenario: Module-level context is a Context instance."""
         from conda_context.context import context as module_context
+
         assert isinstance(module_context, Context)

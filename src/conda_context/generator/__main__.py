@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import ast
 import sys
-import textwrap
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -35,7 +34,10 @@ _CONSTANT_MAP: dict[str, tuple[str, str]] = {
         "DEFAULT_AGGRESSIVE_UPDATE_PACKAGES",
         "DEFAULT_AGGRESSIVE_UPDATE_PACKAGES",
     ),
-    "DEFAULT_CONDA_LIST_FIELDS": ("DEFAULT_CONDA_LIST_FIELDS", "DEFAULT_CONDA_LIST_FIELDS"),
+    "DEFAULT_CONDA_LIST_FIELDS": (
+        "DEFAULT_CONDA_LIST_FIELDS",
+        "DEFAULT_CONDA_LIST_FIELDS",
+    ),
     "DEFAULT_CONSOLE_REPORTER_BACKEND": (
         "DEFAULT_CONSOLE_REPORTER_BACKEND",
         "DEFAULT_CONSOLE_REPORTER_BACKEND",
@@ -80,9 +82,7 @@ def fetch_file(tag: str, path: str) -> str:
             return resp.read().decode("utf-8")
     except Exception as exc:
         raise RuntimeError(
-            f"Failed to fetch {path} at tag {tag!r} from GitHub.\n"
-            f"URL: {url}\n"
-            f"Error: {exc}"
+            f"Failed to fetch {path} at tag {tag!r} from GitHub.\nURL: {url}\nError: {exc}"
         ) from exc
 
 
@@ -218,9 +218,7 @@ def extract_fields(source: str) -> list[FieldSpec]:
                         if kw.arg == "element_type":
                             et = _extract_node_value(kw.value)
                             if isinstance(et, tuple):
-                                element_types = [
-                                    str(t).split(".")[-1] for t in et
-                                ]
+                                element_types = [str(t).split(".")[-1] for t in et]
                             elif isinstance(et, str):
                                 element_types = [et.split(".")[-1]]
                         elif kw.arg == "validation":
@@ -249,7 +247,10 @@ def extract_fields(source: str) -> list[FieldSpec]:
                     param_type = "sequence"
                     if param_arg.args:
                         inner = param_arg.args[0]
-                        if isinstance(inner, ast.Call) and _get_name(inner.func) == "PrimitiveParameter":
+                        if (
+                            isinstance(inner, ast.Call)
+                            and _get_name(inner.func) == "PrimitiveParameter"
+                        ):
                             if inner.args:
                                 d = _extract_node_value(inner.args[0])
                                 if isinstance(d, bool):
@@ -363,7 +364,7 @@ def _field_default_repr(field: FieldSpec) -> str:
         return "None"
     if isinstance(d, bool):
         return str(d)
-    if isinstance(d, (int, float)):
+    if isinstance(d, int | float):
         return str(d)
     if isinstance(d, str):
         if d.startswith("<call:") or d == "<unknown>":
@@ -377,7 +378,7 @@ def _field_default_repr(field: FieldSpec) -> str:
             if parts[0] in _ENUM_TYPE_MAP:
                 return d  # e.g. "ChannelPriority.FLEXIBLE"
         return repr(d)
-    if isinstance(d, (tuple, list)):
+    if isinstance(d, tuple | list):
         if len(d) == 0:
             return "()" if isinstance(d, tuple) else "[]"
         return repr(d)

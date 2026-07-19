@@ -6,13 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 import conda_context
-from conda_context.schemas._26_5_3 import CondaConfig
 from conda_context.constants import (
-    ChannelPriority,
     DEFAULT_CHANNELS,
     DEFAULT_CONDA_LIST_FIELDS,
 )
-
+from conda_context.schemas._26_5_3 import CondaConfig
 
 # ---------------------------------------------------------------------------
 # Field coverage

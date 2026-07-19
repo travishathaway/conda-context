@@ -6,7 +6,7 @@ Targets conda 26.5.3.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -19,7 +19,7 @@ _SCHEMA_VERSIONS: dict[str, str] = {
 }
 
 
-def get_schema_for_version(version: str) -> Type["BaseModel"]:
+def get_schema_for_version(version: str) -> type[BaseModel]:
     """Return the CondaConfig Pydantic model for the given conda version string.
 
     Args:
