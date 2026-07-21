@@ -11,7 +11,6 @@ import sys
 
 import pytest
 
-from conda_context.condarc import CondaRC
 from conda_context.context import Context
 
 # ---------------------------------------------------------------------------
@@ -89,41 +88,6 @@ print("OK")
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
     assert "OK" in result.stdout
-
-
-# ---------------------------------------------------------------------------
-# 9.3: End-to-end CondaRC write → Context read round-trip
-# ---------------------------------------------------------------------------
-
-
-def test_condarc_write_read_round_trip(tmp_path):
-    """Scenario: Create temp .condarc, mutate via CondaRC, reload via Context."""
-    rc = tmp_path / ".condarc"
-
-    # Write via CondaRC
-    CondaRC.create(rc).set("offline", True).set("quiet", True).save()
-
-    # Read back via Context
-    ctx = Context(search_path=(rc,))
-    assert ctx.offline is True
-    assert ctx.quiet is True
-
-
-def test_condarc_channel_prepend_round_trip(tmp_path):
-    """Channels written by CondaRC are read correctly by Context."""
-    rc = tmp_path / ".condarc"
-    c = CondaRC.create(rc)
-    c.set("channels", ["defaults"])
-    c.prepend_channel("conda-forge")
-    c.save()
-
-    ctx = Context(search_path=(rc,))
-    assert "conda-forge" in ctx._channels
-    assert "defaults" in ctx._channels
-    # conda-forge should appear before defaults
-    idx_forge = ctx._channels.index("conda-forge")
-    idx_defaults = ctx._channels.index("defaults")
-    assert idx_forge < idx_defaults
 
 
 # ---------------------------------------------------------------------------

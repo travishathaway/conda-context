@@ -21,7 +21,6 @@ A Pydantic-backed replacement for `conda.base.context.Context` — with better v
 - A **Pydantic v2 model** (`CondaConfig`) covering all 60+ configuration fields — typed, documented, and validated.
 - A **layered merge engine** that resolves `.condarc` files, `CONDA_*` environment variables, and CLI args in the same priority order as conda, while tracking the exact file and line number (or env var name) for every resolved value.
 - **Precise validation errors** that tell you *where* the bad value came from, not just that something went wrong.
-- A **`.condarc` write API** (`CondaRC`) that preserves comments and formatting and validates mutations against the full merged config before writing.
 - **Monkey-patch helpers** for replacing `conda.base.context` in running conda processes (for plugin authors).
 
 Each `conda-context` release is pinned to exactly one conda release. `conda-context==26.5.3` targets `conda==26.5.3`.
@@ -114,80 +113,6 @@ except CondaConfigError as e:
     #     "source": {"type": "yaml_file", "path": "/home/user/.condarc", "line": 4}
     #   }
     # ]
-```
-
-### Writing .condarc files
-
-`CondaRC` provides a full CRUD API for `.condarc` files. It uses `ruamel.yaml` in round-trip mode, so your comments and key ordering survive every write.
-
-#### Load and modify an existing file
-
-```python
-from conda_context.condarc import CondaRC
-
-c = CondaRC.load("/home/user/.condarc")
-
-# Set a scalar value
-c.set("ssl_verify", False)
-
-# Prepend a channel (adds to front)
-c.prepend_channel("conda-forge")
-
-# Append a channel (adds to back)
-c.append_channel("my-local-channel")
-
-# Remove a channel
-c.remove_from("channels", "defaults")
-
-# See what changed before writing
-print(c.diff())
-# {'ssl_verify': (True, False), 'channels': (['defaults'], ['conda-forge', 'my-local-channel'])}
-
-# Write back — validates full merged config first, then writes atomically
-c.save()
-```
-
-#### Create a new file from scratch
-
-```python
-from pathlib import Path
-from conda_context.condarc import CondaRC
-
-c = CondaRC.create(Path("/etc/conda/condarc"))
-
-c.set("ssl_verify", True)
-c.set("channel_priority", "strict")
-c.set("channels", ["conda-forge", "defaults"])
-c.set("offline", False)
-
-# File is not written until .save() is called
-c.save()
-```
-
-#### Remove a key (fall back to lower-priority source)
-
-```python
-c = CondaRC.load("/home/user/.condarc")
-c.unset("ssl_verify")   # removes key; falls back to system .condarc or default
-c.save()
-```
-
-#### Skip cross-field validation on save
-
-If an existing condarc layer already has a conflicting setting, you can save your isolated changes without full-context validation:
-
-```python
-c = CondaRC.load("/home/user/.condarc")
-c.set("offline", True)
-c.save(strict=False)   # only validates fields in this file
-```
-
-#### Read all keys set in a file
-
-```python
-c = CondaRC.load("/home/user/.condarc")
-print(c.get_all())
-# {'channels': ['conda-forge', 'defaults'], 'ssl_verify': False}
 ```
 
 ### Monkey-patching conda (plugin authors)
