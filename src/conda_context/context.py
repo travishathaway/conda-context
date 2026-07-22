@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from functools import cached_property
 from os.path import abspath, expanduser, isdir, isfile, join
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import ValidationError
 
@@ -133,6 +133,144 @@ class Context:
         argparse_args: Parsed CLI arguments (``argparse.Namespace``).
         **kwargs: Additional keyword arguments (ignored, for API compatibility).
     """
+
+    # ------------------------------------------------------------------
+    # Class-level metadata — mirrors conda.base.context.Context
+    # ------------------------------------------------------------------
+
+    category_map: ClassVar[dict[str, tuple[str, ...]]] = {
+        "Channel Configuration": (
+            "channels",
+            "channel_alias",
+            "channel_settings",
+            "default_channels",
+            "override_channels_enabled",
+            "allowlist_channels",
+            "denylist_channels",
+            "custom_channels",
+            "custom_multichannels",
+            "migrated_channel_aliases",
+            "migrated_custom_channels",
+            "add_anaconda_token",
+            "allow_non_channel_urls",
+            "repodata_fns",
+            "use_only_tar_bz2",
+            "repodata_threads",
+            "fetch_threads",
+            "experimental",
+            "no_lock",
+            "repodata_use_zst",
+            "repodata_use_shards",
+        ),
+        "Basic Conda Configuration": (
+            "envs_dirs",
+            "pkgs_dirs",
+            "default_threads",
+            "preview",
+        ),
+        "Network Configuration": (
+            "client_ssl_cert",
+            "client_ssl_cert_key",
+            "local_repodata_ttl",
+            "offline",
+            "proxy_servers",
+            "remote_connect_timeout_secs",
+            "remote_max_retries",
+            "remote_backoff_factor",
+            "remote_read_timeout_secs",
+            "ssl_verify",
+        ),
+        "Solver Configuration": (
+            "aggressive_update_packages",
+            "auto_update_conda",
+            "channel_priority",
+            "create_default_packages",
+            "disallowed_packages",
+            "force_reinstall",
+            "pinned_packages",
+            "prefix_data_interoperability",
+            "track_features",
+            "solver",
+        ),
+        "Package Linking and Install-time Configuration": (
+            "allow_softlinks",
+            "always_copy",
+            "always_softlink",
+            "path_conflict",
+            "rollback_enabled",
+            "safety_checks",
+            "extra_safety_checks",
+            "signing_metadata_url_base",
+            "shortcuts",
+            "shortcuts_only",
+            "non_admin_enabled",
+            "separate_format_cache",
+            "verify_threads",
+            "execute_threads",
+        ),
+        "Conda-build Configuration": (
+            "bld_path",
+            "croot",
+            "anaconda_upload",
+            "conda_build",
+        ),
+        "Output, Prompt, and Flow Control Configuration": (
+            "always_yes",
+            "auto_activate",
+            "default_activation_env",
+            "auto_stack",
+            "changeps1",
+            "env_prompt",
+            "json",
+            "console",
+            "notify_outdated_conda",
+            "quiet",
+            "report_errors",
+            "show_channel_urls",
+            "list_fields",
+            "verbosity",
+            "unsatisfiable_hints",
+            "unsatisfiable_hints_check_depth",
+            "number_channel_notices",
+            "envvars_force_uppercase",
+            "export_platforms",
+            "override_virtual_packages",
+        ),
+        "CLI-only": (
+            "deps_modifier",
+            "update_modifier",
+            "force",
+            "force_remove",
+            "clobber",
+            "dry_run",
+            "download_only",
+            "ignore_pinned",
+            "use_index_cache",
+            "use_local",
+        ),
+        "Hidden and Undocumented": (
+            "allow_cycles",
+            "allow_conda_downgrades",
+            "add_pip_as_python_dependency",
+            "debug",
+            "trace",
+            "dev",
+            "default_python",
+            "enable_private_envs",
+            "error_upload_url",
+            "force_32bit",
+            "root_prefix",
+            "sat_solver",
+            "solver_ignore_timestamps",
+            "subdir",
+            "subdirs",
+            "target_prefix_override",
+            "register_envs",
+            "protect_frozen_envs",
+        ),
+        "Plugin Configuration": ("no_plugins",),
+        "Experimental": ("environment_specifier",),
+    }
 
     def __init__(
         self,
@@ -944,7 +1082,7 @@ class Context:
         except ImportError:
             return False
 
-    @property
+    @cached_property
     def user_agent(self) -> str:
         """Construct the conda user-agent string."""
         try:
@@ -953,9 +1091,14 @@ class Context:
             conda_version = conda.__version__
         except ImportError:
             conda_version = "unknown"
-        python_version = ".".join(str(v) for v in sys.version_info[:3])
-        plat = self.subdir
-        return f"conda/{conda_version} requests/unknown Python/{python_version} {plat}"
+        builder = [f"conda/{conda_version} requests/{self.requests_version}"]
+        builder.append("{}/{}".format(*self.python_implementation_name_version))
+        builder.append("{}/{}".format(*self.platform_system_release))
+        builder.append("{}/{}".format(*self.os_distribution_name_version))
+        libc_family, libc_version = self.libc_family_version
+        if libc_family:
+            builder.append(f"{libc_family}/{libc_version}")
+        return " ".join(builder)
 
     @property
     def conda_build_local_paths(self) -> tuple[str, ...]:
@@ -1106,6 +1249,633 @@ class Context:
     @property
     def local_build_root(self) -> str:
         return self.croot
+
+    # ------------------------------------------------------------------
+    # Plugin infrastructure
+    # ------------------------------------------------------------------
+
+    @property
+    def plugin_manager(self):
+        """The conda plugin manager singleton.
+
+        Requires conda to be installed. Raises ImportError otherwise.
+        This is the preferred way of accessing the PluginManager object for
+        this application and is located here to avoid problems with cyclical
+        imports elsewhere in the code.
+        """
+        try:
+            from conda.plugins.manager import get_plugin_manager  # type: ignore[import]
+
+            return get_plugin_manager()
+        except ImportError as exc:
+            raise ImportError("plugin_manager requires conda to be installed") from exc
+
+    @cached_property
+    def plugins(self):
+        """Settings introduced by the settings plugin hook.
+
+        Requires conda to be installed. Raises ImportError otherwise.
+        Preferred way of accessing plugin-defined settings via the context.
+        """
+        self.plugin_manager.load_settings()
+        return self.plugin_manager.get_config(self.raw_data)
+
+    # ------------------------------------------------------------------
+    # Description map and category map helpers
+    # ------------------------------------------------------------------
+
+    def get_descriptions(self) -> dict[str, str]:
+        """Return the mapping of setting names to their canonical descriptions."""
+        return self.description_map
+
+    @cached_property
+    def description_map(self) -> dict[str, str]:
+        """Canonical human-readable descriptions for all documented settings.
+
+        Descriptions match conda 26.5.3's Context.description_map verbatim,
+        and are the authoritative source used by ``get_descriptions()`` and
+        any tooling that calls ``conda config --describe``.
+        """
+        return {
+            "add_anaconda_token": (
+                "In conjunction with the anaconda command-line client (installed with\n"
+                "`conda install anaconda-client`), and following logging into an Anaconda\n"
+                "Server API site using `anaconda login`, automatically apply a matching\n"
+                "private token to enable access to private packages and channels.\n"
+            ),
+            "aggressive_update_packages": (
+                "A list of packages that, if installed, are always updated to the latest possible\n"
+                "version.\n"
+            ),
+            "allow_non_channel_urls": (
+                "Warn, but do not fail, when conda detects a channel url is not a valid channel.\n"
+            ),
+            "allow_softlinks": (
+                "When allow_softlinks is True, conda uses hard-links when possible, and soft-links\n"  # noqa: E501
+                "(symlinks) when hard-links are not possible, such as when installing on a\n"
+                "different filesystem than the one that the package cache is on. When\n"
+                "allow_softlinks is False, conda still uses hard-links when possible, but when it\n"
+                "is not possible, conda copies files. Individual packages can override\n"
+                "this setting, specifying that certain files should never be soft-linked (see the\n"
+                "no_link option in the build recipe documentation).\n"
+            ),
+            "allowlist_channels": (
+                "The exclusive list of channels allowed to be used on the system. Use of any\n"
+                "other channels will result in an error. If conda-build channels are to be\n"
+                "allowed, along with the --use-local command line flag, be sure to include the\n"
+                "'local' channel in the list. If the list is empty or left undefined, no\n"
+                "channel exclusions will be enforced.\n"
+            ),
+            "always_copy": (
+                "Register a preference that files be copied into a prefix during install rather\n"
+                "than hard-linked.\n"
+            ),
+            "always_softlink": (
+                "Register a preference that files be soft-linked (symlinked) into a prefix during\n"
+                "install rather than hard-linked. The link source is the 'pkgs_dir' package cache\n"
+                "from where the package is being linked. WARNING: Using this option can result in\n"
+                "corruption of long-lived conda environments. Package caches are *caches*, which\n"
+                "means there is some churn and invalidation. With this option, the contents of\n"
+                "environments can be switched out (or erased) via operations on other environments.\n"  # noqa: E501
+            ),
+            "always_yes": (
+                "Automatically choose the 'yes' option whenever asked to proceed with a conda\n"
+                "operation, such as when running `conda install`.\n"
+            ),
+            "anaconda_upload": (
+                "Automatically upload packages built with conda build to anaconda.org.\n"
+            ),
+            "auto_activate": (
+                "Automatically activate the environment given at 'default_activation_env'\n"
+                "during shell initialization.\n"
+            ),
+            "auto_stack": (
+                "Implicitly use --stack when using activate if current level of nesting\n"
+                "(as indicated by CONDA_SHLVL environment variable) is less than or equal to\n"
+                "specified value. 0 or false disables automatic stacking, 1 or true enables\n"
+                "it for one level.\n"
+            ),
+            "auto_update_conda": (
+                "Automatically update conda when a newer or higher priority version is detected.\n"
+            ),
+            "bld_path": (
+                "The location where conda-build will put built packages. Same as 'croot', but\n"
+                "'croot' takes precedence when both are defined. Also used in construction of the\n"
+                "'local' multichannel.\n"
+            ),
+            "changeps1": (
+                "When using activate, change the command prompt ($PS1) to include the\n"
+                "activated environment.\n"
+            ),
+            "channel_alias": ("The prepended url location to associate with channel names.\n"),
+            "channel_priority": (
+                "Accepts values of 'strict', 'flexible', and 'disabled'. The default value\n"
+                "is 'flexible'. With strict channel priority, packages in lower priority channels\n"
+                "are not considered if a package with the same name appears in a higher\n"
+                "priority channel. With flexible channel priority, the solver may reach into\n"
+                "lower priority channels to fulfill dependencies, rather than raising an\n"
+                "unsatisfiable error. With channel priority disabled, package version takes\n"
+                "precedence, and the configured priority of channels is used only to break ties.\n"
+                "In previous versions of conda, this parameter was configured as either True or\n"
+                "False. True is now an alias to 'flexible'.\n"
+            ),
+            "channel_settings": (
+                "A list of mappings that allows overriding certain settings for a single channel.\n"
+                'Each list item should include at least the "channel" key and the setting you would\n'  # noqa: E501
+                "like to override.\n"
+            ),
+            "channels": ("The list of conda channels to include for relevant operations.\n"),
+            "client_ssl_cert": (
+                "A path to a single file containing a private key and certificate (e.g. .pem\n"
+                "file). Alternately, use client_ssl_cert_key in conjunction with client_ssl_cert\n"
+                "for individual files.\n"
+            ),
+            "client_ssl_cert_key": (
+                "Used in conjunction with client_ssl_cert for a matching key file.\n"
+            ),
+            "conda_build": ("General configuration parameters for conda-build.\n"),
+            "console": (
+                "Configure different backends to be used while rendering normal console output.\n"
+                'Defaults to "classic".\n'
+            ),
+            "create_default_packages": (
+                "Packages that are by default added to a newly created environments.\n"
+            ),
+            "croot": (
+                "The location where conda-build will put built packages. Same as 'bld_path', but\n"
+                "'croot' takes precedence when both are defined. Also used in construction of the\n"
+                "'local' multichannel.\n"
+            ),
+            "custom_channels": (
+                "A map of key-value pairs where the key is a channel name and the value is\n"
+                "a channel location. Channels defined here override the default\n"
+                "'channel_alias' value. The channel name (key) is not included in the channel\n"
+                "location (value).  For example, to override the location of the 'conda-forge'\n"
+                "channel where the url to repodata is\n"
+                "https://anaconda-repo.dev/packages/conda-forge/linux-64/repodata.json, add an\n"
+                "entry 'conda-forge: https://anaconda-repo.dev/packages'.\n"
+            ),
+            "custom_multichannels": (
+                "A multichannel is a metachannel composed of multiple channels. The only reserved\n"
+                "multichannel is 'local', which is a list of file:// channel locations where\n"
+                "conda-build stashes successfully-built packages and cannot be overridden.\n"
+                "Other multichannels, including 'defaults', can be defined or customized with\n"
+                "custom_multichannels, where the key is the multichannel name and the value is\n"
+                "a list of channel names and/or channel urls. The 'defaults' multichannel can\n"
+                "also be customized using the 'default_channels' parameter (a historical setting\n"
+                "from when 'defaults' was reserved). If both are defined,\n"
+                "'custom_multichannels.defaults' takes precedence.\n"
+            ),
+            "default_activation_env": (
+                "The environment to be automatically activated on startup if 'auto_activate'\n"
+                "is True. Also sets the default environment to activate when 'conda activate'\n"
+                "receives no arguments.\n"
+            ),
+            "default_channels": (
+                "The list of channel names and/or urls used for the 'defaults' multichannel.\n"
+                "Can be overridden by 'custom_multichannels.defaults'.\n"
+            ),
+            "default_threads": (
+                "Threads to use by default for parallel operations.  Default is None,\n"
+                "which allows operations to choose themselves.  For more specific\n"
+                "control, see the other *_threads parameters:\n"
+                "    * repodata_threads - for fetching/loading repodata\n"
+                "    * verify_threads - for verifying package contents in transactions\n"
+                "    * execute_threads - for carrying out the unlinking and linking steps\n"
+            ),
+            "denylist_channels": (
+                "The list of channels that are denied to be used on the system. Use of any\n"
+                "of these channels will result in an error. If conda-build channels are to be\n"
+                "allowed, along with the --use-local command line flag, be sure to not include\n"
+                "the 'local' channel in the list. If the list is empty or left undefined, no\n"
+                "channel exclusions will be enforced.\n"
+            ),
+            "disallowed_packages": (
+                "Package specifications to disallow installing. The default is to allow\n"
+                "all packages.\n"
+            ),
+            "download_only": (
+                "Solve an environment and ensure package caches are populated, but exit\n"
+                "prior to unlinking and linking packages into the prefix\n"
+            ),
+            "env_prompt": (
+                "Template for prompt modification based on the active environment. Currently\n"
+                "supported template variables are '{prefix}', '{name}', and '{default_env}'.\n"
+                "'{prefix}' is the absolute path to the active environment. '{name}' is the\n"
+                "basename of the active environment prefix. '{default_env}' holds the value\n"
+                "of '{name}' if the active environment is a conda named environment ('-n'\n"
+                "flag), or otherwise holds the value of '{prefix}'. Templating uses python's\n"
+                "str.format() method.\n"
+            ),
+            "environment_specifier": (
+                "**EXPERIMENTAL** While experimental, expect both major and minor changes across minor releases.\n"  # noqa: E501
+                "\n"
+                "The name of the environment specifier plugin that should be used for this context.\n"  # noqa: E501
+                "If not specified, the plugin manager will try to detect the plugin to use.\n"
+            ),
+            "envs_dirs": (
+                "The list of directories to search for named environments. When creating a new\n"
+                "named environment, the environment will be placed in the first writable\n"
+                "location.\n"
+            ),
+            "envvars_force_uppercase": (
+                "Force uppercase for new environment variable names. Defaults to True.\n"
+            ),
+            "execute_threads": (
+                "Threads to use when performing the unlink/link transaction.  When not set,\n"
+                "defaults to 1.  This step is pretty strongly I/O limited, and you may not\n"
+                "see much benefit here.\n"
+            ),
+            "experimental": ("List of experimental features to enable.\n"),
+            "export_platforms": (
+                "Additional platform(s)/subdir(s) for export (e.g., linux-64, osx-64, win-64), current\n"  # noqa: E501
+                "platform is always included.\n"
+            ),
+            "extra_safety_checks": (
+                "Spend extra time validating package contents.  Currently, runs sha256 verification\n"  # noqa: E501
+                "on every file within each package during installation.\n"
+            ),
+            "fetch_threads": (
+                "Threads to use when downloading packages.  When not set,\n"
+                "defaults to None, which uses the default ThreadPoolExecutor behavior.\n"
+            ),
+            "force_reinstall": (
+                "Ensure that any user-requested package for the current operation is uninstalled\n"
+                "and reinstalled, even if that package already exists in the environment.\n"
+            ),
+            "json": ("Ensure all output written to stdout is structured json.\n"),
+            "list_fields": ("Default fields to report as columns in the output of `conda list`.\n"),
+            "local_repodata_ttl": (
+                "For a value of False or 0, always fetch remote repodata (HTTP 304 responses\n"
+                "respected). For a value of True or 1, respect the HTTP Cache-Control max-age\n"
+                "header. Any other positive integer values is the number of seconds to locally\n"
+                "cache repodata before checking the remote server for an update.\n"
+            ),
+            "migrated_channel_aliases": (
+                "A list of previously-used channel_alias values. Useful when switching between\n"
+                "different Anaconda Repository instances.\n"
+            ),
+            "migrated_custom_channels": (
+                "A map of key-value pairs where the key is a channel name and the value is\n"
+                "the previous location of the channel.\n"
+            ),
+            "no_lock": ("Disable index cache lock (defaults to enabled).\n"),
+            "no_plugins": (
+                "Disable all currently-registered plugins, except built-in conda plugins.\n"
+            ),
+            "non_admin_enabled": (
+                "Allows completion of conda's create, install, update, and remove operations, for\n"
+                "non-privileged (non-root or non-administrator) users.\n"
+            ),
+            "notify_outdated_conda": (
+                "Notify if a newer version of conda is detected during a create, install, update,\n"
+                "or remove operation.\n"
+            ),
+            "number_channel_notices": (
+                "Sets the number of channel notices to be displayed when running commands\n"
+                'the "install", "create", "update", "env create", and "env update" . Defaults\n'
+                "to 5. In order to completely suppress channel notices, set this to 0.\n"
+            ),
+            "offline": ("Restrict conda to cached download content and file:// based urls.\n"),
+            "override_channels_enabled": (
+                "Permit use of the --override-channels command-line flag.\n"
+            ),
+            "override_virtual_packages": ("Set override values for virtual packages.\n"),
+            "path_conflict": (
+                "The method by which conda handle's conflicting/overlapping paths during a\n"
+                "create, install, or update operation. The value must be one of 'clobber',\n"
+                "'warn', or 'prevent'. The '--clobber' command-line flag or clobber\n"
+                "configuration parameter overrides path_conflict set to 'prevent'.\n"
+            ),
+            "pinned_packages": (
+                "A list of package specs to pin for every environment resolution.\n"
+                "This parameter is in BETA, and its behavior may change in a future release.\n"
+            ),
+            "pkgs_dirs": (
+                "The list of directories where locally-available packages are linked from at\n"
+                "install time. Packages not locally available are downloaded and extracted\n"
+                "into the first writable directory.\n"
+            ),
+            "prefix_data_interoperability": (
+                "Enable plugins to allow conda to interact with non-conda-installed packages.\n"
+            ),
+            "preview": ("List of preview features to opt into.\n"),
+            "proxy_servers": (
+                "A mapping to enable proxy settings. Keys can be either (1) a scheme://hostname\n"
+                "form, which will match any request to the given scheme and exact hostname, or\n"
+                "(2) just a scheme, which will match requests to that scheme. Values are are\n"
+                "the actual proxy server, and are of the form\n"
+                "'scheme://[user:password@]host[:port]'. The optional 'user:password' inclusion\n"
+                "enables HTTP Basic Auth with your proxy.\n"
+            ),
+            "quiet": ("Disable progress bar display and other output.\n"),
+            "remote_backoff_factor": (
+                "The factor determines the time HTTP connection should wait for attempt.\n"
+            ),
+            "remote_connect_timeout_secs": (
+                "The number seconds conda will wait for your client to establish a connection\n"
+                "to a remote url resource.\n"
+            ),
+            "remote_max_retries": (
+                "The maximum number of retries each HTTP connection should attempt.\n"
+            ),
+            "remote_read_timeout_secs": (
+                "Once conda has connected to a remote resource and sent an HTTP request, the\n"
+                "read timeout is the number of seconds conda will wait for the server to send\n"
+                "a response.\n"
+            ),
+            "repodata_fns": (
+                "Specify filenames for repodata fetching. The default is ('current_repodata.json',\n"  # noqa: E501
+                "'repodata.json'), which tries a subset of the full index containing only the\n"
+                "latest version for each package, then falls back to repodata.json.  You may\n"
+                "want to specify something else to use an alternate index that has been reduced\n"
+                "somehow.\n"
+            ),
+            "repodata_threads": (
+                "Threads to use when downloading and reading repodata.  When not set,\n"
+                "defaults to None, which uses the default ThreadPoolExecutor behavior.\n"
+            ),
+            "repodata_use_shards": ("Use sharded repodata if available.\n"),
+            "repodata_use_zst": ("Use `repodata.json.zst` if available.\n"),
+            "report_errors": (
+                "Opt in, or opt out, of automatic error reporting to core maintainers. Error\n"
+                "reports are anonymous, with only the error stack trace and information given\n"
+                "by `conda info` being sent.\n"
+            ),
+            "rollback_enabled": (
+                "Should any error occur during an unlink/link transaction, revert any disk\n"
+                "mutations made to that point in the transaction.\n"
+            ),
+            "safety_checks": (
+                "Enforce available safety guarantees during package installation.\n"
+                "The value must be one of 'enabled', 'warn', or 'disabled'.\n"
+            ),
+            "separate_format_cache": (
+                "Treat .tar.bz2 files as different from .conda packages when\n"
+                "filenames are otherwise similar. This defaults to False, so\n"
+                "that your package cache doesn't churn when rolling out the new\n"
+                "package format. If you'd rather not assume that a .tar.bz2 and\n"
+                ".conda from the same place represent the same content, set this\n"
+                "to True.\n"
+            ),
+            "shortcuts": (
+                "Allow packages to create OS-specific shortcuts (e.g. in the Windows Start\n"
+                "Menu) at install time.\n"
+            ),
+            "shortcuts_only": ("Create shortcuts only for the specified package names.\n"),
+            "show_channel_urls": (
+                "Show channel URLs when displaying what is going to be downloaded.\n"
+            ),
+            "signing_metadata_url_base": (
+                "Base URL for obtaining trust metadata updates (i.e., the `*.root.json` and\n"
+                "`key_mgr.json` files) used to verify metadata and (eventually) package signatures.\n"  # noqa: E501
+            ),
+            "solver": (
+                "A string to choose between the different solver logics implemented in\n"
+                "conda. A solver logic takes care of turning your requested packages into a\n"
+                "list of specs to add and/or remove from a given environment, based on their\n"
+                "dependencies and specified constraints.\n"
+            ),
+            "ssl_verify": (
+                "Conda verifies SSL certificates for HTTPS requests, just like a web\n"
+                "browser. By default, SSL verification is enabled, and conda operations will\n"
+                "fail if a required url's certificate cannot be verified. Setting ssl_verify to\n"
+                "False disables certification verification. The value for ssl_verify can also\n"
+                "be (1) a path to a CA bundle file, (2) a path to a directory containing\n"
+                "certificates of trusted CA, or (3) 'truststore' to use the\n"
+                "operating system certificate store.\n"
+            ),
+            "track_features": (
+                "A list of features that are tracked by default. An entry here is similar to\n"
+                "adding an entry to the create_default_packages list.\n"
+            ),
+            "unsatisfiable_hints": (
+                "A boolean to determine if conda should find conflicting packages in the case\n"
+                "of a failed install.\n"
+            ),
+            "unsatisfiable_hints_check_depth": (
+                "An integer that specifies how many levels deep to search for unsatisfiable\n"
+                "dependencies. If this number is 1 it will complete the unsatisfiable hints\n"
+                "fastest (but perhaps not the most complete). The higher this number, the\n"
+                "longer the generation of the unsat hint will take. Defaults to 3.\n"
+            ),
+            "use_index_cache": ("Use cache of channel index files, even if it has expired.\n"),
+            "use_only_tar_bz2": (
+                "A boolean indicating that only .tar.bz2 conda packages should be downloaded.\n"
+                "This is forced to True if conda-build is installed and older than 3.18.3,\n"
+                "because older versions of conda break when conda feeds it the new file format.\n"
+            ),
+            "verbosity": ("Sets output log level. 0 is warn. 1 is info. 2 is debug. 3 is trace.\n"),
+            "verify_threads": (
+                "Threads to use when performing the transaction verification step.  When not set,\n"
+                "defaults to 1.\n"
+            ),
+        }
+
+    # ------------------------------------------------------------------
+    # Memoized system information properties (used by user_agent and
+    # available externally, matching conda's Context API)
+    # ------------------------------------------------------------------
+
+    @cached_property
+    def python_implementation_name_version(self) -> tuple[str, str]:
+        """Return (python_implementation, python_version), e.g. ('CPython', '3.12.0')."""
+        return platform.python_implementation(), platform.python_version()
+
+    @cached_property
+    def platform_system_release(self) -> tuple[str, str]:
+        """Return (system_name, release_version), e.g. ('Linux', '5.15.0')."""
+        return platform.system(), platform.release()
+
+    @cached_property
+    def os_distribution_name_version(self) -> tuple[str, str]:
+        """Return (distro_name, version), e.g. ('debian', '11') or ('OSX', '13.0')."""
+        system = self.platform_system_release[0]
+        if system == "Linux":
+            try:
+                import distro  # type: ignore[import]
+
+                return distro.id(), distro.version()
+            except ImportError:
+                pass
+            return "Linux", self.platform_system_release[1]
+        elif system == "Darwin":
+            return "OSX", platform.mac_ver()[0]
+        elif system == "Windows":
+            return "Windows", platform.version()
+        return system, self.platform_system_release[1]
+
+    @cached_property
+    def libc_family_version(self) -> tuple[str | None, str | None]:
+        """Return (libc_family, libc_version) on Linux, or (None, None) on other OSes."""
+        if self.platform_system_release[0] == "Linux":
+            try:
+                from conda.common._os.linux import linux_get_libc_version  # type: ignore[import]
+
+                return linux_get_libc_version()
+            except ImportError:
+                pass
+            # Fallback: try to detect glibc via ctypes
+            try:
+                import ctypes
+
+                libc = ctypes.CDLL("libc.so.6")
+                gnu_get_libc_version = libc.gnu_get_libc_version
+                gnu_get_libc_version.restype = ctypes.c_char_p
+                version = gnu_get_libc_version().decode()
+                return "glibc", version
+            except Exception:
+                pass
+        return None, None
+
+    @cached_property
+    def requests_version(self) -> str:
+        """Return the installed requests library version string, or 'unknown'."""
+        try:
+            from requests import __version__ as _requests_version  # type: ignore[import]
+
+            return _requests_version
+        except ImportError:
+            return "unknown"
+
+    # ------------------------------------------------------------------
+    # Environment and prefix helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def prefix_specified(self) -> bool:
+        """Return True if --prefix or --name was given on the command line."""
+        argparse_args = self._argparse_args or {}
+        return argparse_args.get("prefix") is not None or argparse_args.get("name") is not None
+
+    def preview_enabled(self, value: str) -> bool:
+        """Return True if the given preview feature label is enabled by the user."""
+        return value in self.preview
+
+    @property
+    def environment_context_keys(self) -> list[str]:
+        """List of setting names that are environment-specific."""
+        return [
+            "aggressive_update_packages",
+            "channel_priority",
+            "channels",
+            "channel_settings",
+            "custom_channels",
+            "custom_multichannels",
+            "deps_modifier",
+            "disallowed_packages",
+            "pinned_packages",
+            "repodata_fns",
+            "sat_solver",
+            "solver",
+            "track_features",
+            "update_modifier",
+            "use_only_tar_bz2",
+        ]
+
+    @property
+    def environment_settings(self) -> dict[str, Any]:
+        """Return a dict of environment-related settings."""
+        return {key: getattr(self, key) for key in self.environment_context_keys}
+
+    @property
+    def error_upload_url(self) -> str:
+        """URL for uploading unexpected error reports.
+
+        .. deprecated:: 26.9
+            This property is deprecated and will be removed in conda 27.3.
+            Use ``_error_upload_url`` directly if needed.
+        """
+        return self._error_upload_url
+
+    @property
+    def report_errors(self) -> bool | None:
+        """Whether to automatically report errors.
+
+        .. deprecated:: 26.9
+            This property is deprecated and will be removed in conda 27.3.
+            Use ``_report_errors`` directly if needed.
+        """
+        return self._report_errors
+
+    # ------------------------------------------------------------------
+    # Solver user-agent helper
+    # ------------------------------------------------------------------
+
+    def solver_user_agent(self) -> str:
+        """Build the solver fragment of the User-Agent header string."""
+        user_agent = f"solver/{self.solver}"
+        try:
+            solver_backend = self.plugin_manager.get_cached_solver_backend()
+            user_agent += f" {solver_backend.user_agent()}"
+        except Exception as exc:
+            log.debug(
+                "User agent could not be fetched from solver class '%s'.",
+                self.solver,
+                exc_info=exc,
+            )
+        return user_agent
+
+    # ------------------------------------------------------------------
+    # conda executable environment variables
+    # ------------------------------------------------------------------
+
+    @property
+    def conda_exe_vars_dict(self) -> dict[str, str | None]:
+        """Dict of env vars used to delegate to the conda executable.
+
+        Requires conda to be installed. Falls back to a minimal dict otherwise.
+        """
+        try:
+            from conda.base.constants import BIN_DIRECTORY  # type: ignore[import]
+            from conda.common.path import on_win  # type: ignore[import]
+        except ImportError:
+            import os as _os
+
+            bin_dir = "Scripts" if sys.platform == "win32" else "bin"
+            exe_name = "conda.exe" if sys.platform == "win32" else "conda"
+            exe = _os.path.join(self.conda_prefix, bin_dir, exe_name)
+            return {
+                "CONDA_EXE": exe,
+                "_CONDA_EXE": exe,
+                "_CE_M": None,
+                "_CE_CONDA": None,
+                "CONDA_PYTHON_EXE": sys.executable,
+                "_CONDA_ROOT": self.conda_prefix,
+            }
+
+        if self.dev:
+            try:
+                from conda.base.constants import CONDA_SOURCE_ROOT  # type: ignore[import]
+            except ImportError:
+                CONDA_SOURCE_ROOT = self.conda_prefix
+            if pythonpath := os.environ.get("PYTHONPATH", ""):
+                pythonpath = os.pathsep.join((CONDA_SOURCE_ROOT, pythonpath))
+            else:
+                pythonpath = CONDA_SOURCE_ROOT
+            return {
+                "CONDA_EXE": sys.executable,
+                "_CONDA_EXE": sys.executable,
+                "PYTHONPATH": pythonpath,
+                "_CE_M": "-m",
+                "_CE_CONDA": "conda",
+                "CONDA_PYTHON_EXE": sys.executable,
+                "_CONDA_ROOT": self.conda_prefix,
+            }
+        else:
+            exe = os.path.join(
+                self.conda_prefix,
+                BIN_DIRECTORY,
+                "conda.exe" if on_win else "conda",
+            )
+            return {
+                "CONDA_EXE": exe,
+                "_CONDA_EXE": exe,
+                "_CE_M": None,
+                "_CE_CONDA": None,
+                "CONDA_PYTHON_EXE": sys.executable,
+                "_CONDA_ROOT": self.conda_prefix,
+            }
 
     # ------------------------------------------------------------------
     # post_build_validation (API compat)
