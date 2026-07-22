@@ -69,7 +69,6 @@ generate = "python -m conda_context.generator extract"
 pytest = ">=7"
 pytest-cov = ">=4"
 ruff = ">=0.4"
-pre-commit = ">=3"
 prek = ">=0.4"
 
 # Python-version features — pin the interpreter for CI matrix jobs
@@ -84,8 +83,8 @@ test = "pytest tests/ -v"
 test-cov = "pytest tests/ -v --cov=conda_context --cov-report=term-missing"
 lint = "ruff check src/ tests/"
 fmt = "ruff format src/ tests/"
-pre-commit-install = "pre-commit install"
-pre-commit-run = "pre-commit run --all-files"
+pre-commit-install = "prek install"
+pre-commit-run = "prek run --all-files"
 prek = "prek"
 
 # Environments
