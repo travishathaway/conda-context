@@ -105,6 +105,75 @@ try:
 except ImportError:
     _DEFAULT_SEARCH_PATH = _FALLBACK_SEARCH_PATH
 
+# ---------------------------------------------------------------------------
+# Module-level re-exports expected by conda modules that do
+#   ``from conda.base.context import <name>``
+# When the import hook redirects conda.base.context → this module these names
+# must be present at module scope.
+# ---------------------------------------------------------------------------
+
+# Public aliases for the private arch / platform sets
+non_x86_machines = _non_x86_machines  # re-export
+
+# sys_rc_path / user_rc_path: string paths to the system and user condarc.
+# Prefer conda's own values (which honour CONDA_ROOT) when available.
+try:
+    from conda.base.context import (  # type: ignore[import]
+        sys_rc_path as sys_rc_path,
+    )
+    from conda.base.context import (
+        user_rc_path as user_rc_path,
+    )
+except ImportError:
+    # Fallback: derive them from the search-path constants ourselves.
+    sys_rc_path = str(Path(sys.prefix) / ".condarc")
+    user_rc_path = str(Path.home() / ".condarc")
+
+# Utility functions that conda imports from conda.base.context.
+# Re-export from conda when available; provide minimal stubs otherwise.
+try:
+    from conda.base.context import (  # type: ignore[import]
+        determine_target_prefix as determine_target_prefix,
+    )
+    from conda.base.context import (
+        env_name as env_name,
+    )
+    from conda.base.context import (
+        locate_prefix_by_name as locate_prefix_by_name,
+    )
+    from conda.base.context import (
+        validate_channels as validate_channels,
+    )
+except ImportError:
+    # Stubs used when conda is not installed (keeps the module importable).
+    def determine_target_prefix(ctx: Any, args: Any = None) -> str:  # type: ignore[misc]
+        """Stub: return the default prefix."""
+        return sys.prefix
+
+    def env_name(prefix: Any) -> str | None:  # type: ignore[misc]
+        """Stub: derive an env name from a prefix path."""
+        if not prefix:
+            return None
+        prefix_path = Path(str(prefix))
+        if prefix_path == Path(sys.prefix):
+            return ROOT_ENV_NAME
+        return prefix_path.name
+
+    def locate_prefix_by_name(name: str, envs_dirs: Any = None) -> str:  # type: ignore[misc]
+        """Stub: locate a named environment."""
+        if not name:
+            raise ValueError("'name' cannot be empty.")
+        search_dirs = list(envs_dirs or [Path(sys.prefix).parent])
+        for d in search_dirs:
+            candidate = Path(str(d)) / name
+            if candidate.is_dir():
+                return str(candidate)
+        raise OSError(f"No environment named {name!r} found.")
+
+    def validate_channels(channels: Any) -> Any:  # type: ignore[misc]
+        """Stub: pass channels through unchanged."""
+        return channels
+
 
 def _unique(iterable):
     """Yield unique items preserving order."""
@@ -312,8 +381,18 @@ class Context:
         else:
             items = argparse_args.items() if hasattr(argparse_args, "items") else ()
 
-        # Filter out None values (conda uses NULL sentinel; we use None)
-        self._argparse_args = {k: v for k, v in items if v is not None}
+        # Filter out None values and conda's auxlib _Null sentinel (which is
+        # falsy but not None — it appears in argparse Namespaces when a flag
+        # was not supplied on the command line).
+        def _is_set(v: Any) -> bool:
+            if v is None:
+                return False
+            # Detect conda.auxlib._Null by type name without importing auxlib
+            if type(v).__name__ == "_Null":
+                return False
+            return True
+
+        self._argparse_args = {k: v for k, v in items if _is_set(v)}
         self._rebuild()
         return self
 
@@ -326,6 +405,184 @@ class Context:
             # Remove cached_property cache entries
             if key in type(self).__dict__ and isinstance(type(self).__dict__[key], cached_property):
                 self.__dict__.pop(key, None)
+        # Fire registered reset callbacks (matches conda's behaviour)
+        for cb in list(self._reset_callbacks):
+            try:
+                cb()
+            except Exception:
+                pass
+
+    def register_reset_callaback(self, callback: Any) -> None:  # noqa: N802  (typo matches conda's API)
+        """Register a callable to be invoked on every cache reset.
+
+        Note: The misspelling "callaback" matches conda 26.5.3's public API
+        exactly — changing it would break callers such as
+        ``conda.models.channel``.
+        """
+        self._reset_callbacks.setdefault(callback, None)
+
+    def validate_configuration(self) -> None:
+        """Validate the current configuration, raising CondaConfigError on failure.
+
+        Replaces conda's ``Context.validate_configuration()`` with a
+        provenance-aware version: any Pydantic ValidationError is enriched
+        with the exact file/line or env-var origin of each bad value before
+        being re-raised as ``CondaConfigError``.
+
+        Called by ``conda install``, ``conda config``, and friends.
+        """
+        try:
+            # Re-validate by constructing a fresh CondaConfig from raw_data.
+            # This mirrors what _rebuild() does but is safe to call externally.
+            CondaConfig(**self.raw_data)
+        except ValidationError as exc:
+            raise CondaConfigError(exc, self._provenance) from exc
+
+    def validate_all(self) -> None:
+        """Validate all configuration sources, raising CondaConfigError on failure.
+
+        Mirrors conda's ``Context.validate_all()``.  In conda's original
+        implementation this iterates over each raw_data source separately; here
+        we delegate to ``validate_configuration()`` which covers the full merged
+        view.
+        """
+        self.validate_configuration()
+
+    # ------------------------------------------------------------------
+    # Parameter introspection — mirrors conda's ParameterLoader-based API
+    # ------------------------------------------------------------------
+    # conda's Context derives these from a metaclass that builds a
+    # ``_parameter_loaders`` dict from ``ParameterLoader`` descriptors.
+    # We derive equivalent information from ``CondaConfig.model_fields``
+    # so that calls like ``context.list_parameters()`` and
+    # ``context.parameter_names`` continue to work.
+
+    @property
+    def parameter_names(self) -> tuple[str, ...]:
+        """All canonical parameter names (including private ``_`` prefixed ones)."""
+        fields = CondaConfig.model_fields
+        names: list[str] = []
+        for field_name, field_info in fields.items():
+            # Re-apply the underscore prefix convention that conda uses for
+            # parameters that have public aliases (e.g. ``_default_activation_env``).
+            if field_info.alias and field_info.alias != field_name:
+                names.append(f"_{field_name}")
+            else:
+                names.append(field_name)
+        return tuple(names)
+
+    @property
+    def parameter_names_and_aliases(self) -> tuple[str, ...]:
+        """All parameter names including all registered aliases."""
+        fields = CondaConfig.model_fields
+        seen: dict[str, None] = {}
+        for field_name, field_info in fields.items():
+            # Canonical name
+            seen[field_name] = None
+            # Alias (if different from canonical)
+            if field_info.alias and field_info.alias != field_name:
+                seen[field_info.alias] = None
+            # validation_alias may hold a list of additional aliases
+            va = field_info.validation_alias
+            if va is not None:
+                if isinstance(va, str):
+                    seen[va] = None
+                elif hasattr(va, "choices"):
+                    # AliasChoices / AliasPath from pydantic
+                    for choice in va.choices:
+                        if isinstance(choice, str):
+                            seen[choice] = None
+        return tuple(seen)
+
+    def list_parameters(self, aliases: bool = False) -> tuple[str, ...]:
+        """Return all parameter names, optionally including aliases.
+
+        Mirrors ``conda.base.context.Context.list_parameters()``.
+
+        Args:
+            aliases: If ``True``, include aliases in insertion order.
+                     If ``False`` (default), return sorted canonical names.
+        """
+        if aliases:
+            return self.parameter_names_and_aliases
+        return tuple(sorted(name.lstrip("_") for name in self.parameter_names))
+
+    def name_for_alias(self, alias: str, ignore_private: bool = True) -> str | None:
+        """Return the canonical parameter name for *alias*, or ``None``.
+
+        Mirrors ``conda.base.context.Context.name_for_alias()``.
+        """
+        fields = CondaConfig.model_fields
+        for field_name, field_info in fields.items():
+            candidates = [field_name]
+            if field_info.alias:
+                candidates.append(field_info.alias)
+            va = field_info.validation_alias
+            if va is not None:
+                if isinstance(va, str):
+                    candidates.append(va)
+                elif hasattr(va, "choices"):
+                    for choice in va.choices:
+                        if isinstance(choice, str):
+                            candidates.append(choice)
+            if alias in candidates:
+                if ignore_private and field_name.startswith("_"):
+                    return None
+                return field_name
+        return None
+
+    def describe_parameter(self, parameter_name: str) -> dict[str, Any]:
+        """Return a description dict for *parameter_name*.
+
+        Mirrors the shape returned by conda's ``Context.describe_parameter()``:
+        ``{"name": ..., "aliases": [...], "description": ..., "parameter_type": ...}``.
+
+        Raises ``KeyError`` if the parameter is unknown.
+        """
+        # Normalise: strip leading underscore that conda uses for aliased params
+        lookup = parameter_name.lstrip("_")
+        fields = CondaConfig.model_fields
+        if lookup not in fields:
+            raise KeyError(parameter_name)
+        field_info = fields[lookup]
+        aliases: list[str] = []
+        if field_info.alias and field_info.alias != lookup:
+            aliases.append(field_info.alias)
+        va = field_info.validation_alias
+        if va is not None:
+            if isinstance(va, str):
+                aliases.append(va)
+            elif hasattr(va, "choices"):
+                for choice in va.choices:
+                    if isinstance(choice, str):
+                        aliases.append(choice)
+        return {
+            "name": lookup,
+            "aliases": aliases,
+            "description": field_info.description or "",
+            "parameter_type": str(field_info.annotation),
+        }
+
+    def typify_parameter(self, parameter_name: str, value: Any, source: Any) -> tuple[str, Any]:
+        """Coerce *value* to the correct type for *parameter_name*.
+
+        Mirrors ``conda.base.context.Context.typify_parameter()``.
+        Returns a ``(canonical_name, typed_value)`` tuple.
+
+        Raises ``KeyError`` if the parameter is unknown.
+        """
+        lookup = parameter_name.lstrip("_")
+        fields = CondaConfig.model_fields
+        if lookup not in fields:
+            raise KeyError(parameter_name)
+        # Use Pydantic to coerce: construct a model with only this field set
+        try:
+            coerced = CondaConfig.model_validate({lookup: value})
+            return (lookup, getattr(coerced, lookup))
+        except ValidationError:
+            # Return the raw value if coercion fails; let validate_configuration
+            # surface the error with provenance later.
+            return (lookup, value)
 
     def _rebuild(self) -> None:
         """Re-run merge and validation after any source change."""
@@ -1278,7 +1535,11 @@ class Context:
         Preferred way of accessing plugin-defined settings via the context.
         """
         self.plugin_manager.load_settings()
-        return self.plugin_manager.get_config(self.raw_data)
+        # PluginConfig expects raw_data in conda's {source: {key: RawParam}} format.
+        # Our flat merged dict is not compatible with that shape.  Pass an empty
+        # dict so PluginConfig starts clean; plugin settings from .condarc files
+        # are not yet parsed by our MergeEngine.
+        return self.plugin_manager.get_config({})
 
     # ------------------------------------------------------------------
     # Description map and category map helpers
@@ -1944,7 +2205,7 @@ try:
 except CondaConfigError as e:
     import sys as _sys
 
-    print(repr(e), file=_sys.stderr)
+    print(str(e), file=_sys.stderr)
     _sys.exit(1)
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from conda.exceptions import CondaError
 from pydantic import ValidationError
 
 from .provenance import ProvenanceInfo, ProvenanceMap
@@ -91,6 +92,18 @@ _ENUM_FIELDS: dict[str, list[str]] = {
 
 def _generate_hint(field_name: str, raw_value: Any) -> str | None:
     """Return an actionable hint string for known misconfiguration patterns."""
+    # ssl_verify accepts bool, path, or "truststore" — give a targeted hint
+    if field_name == "ssl_verify" and isinstance(raw_value, str):
+        v = raw_value.strip().lower()
+        if v in ("yes", "yess", "y", "true", "1", "on"):
+            return "Did you mean `ssl_verify: true`?"
+        elif v in ("no", "n", "false", "0", "off"):
+            return "Did you mean `ssl_verify: false`?"
+        return (
+            "Expected `true`, `false`, a path to a CA bundle, or `truststore`. "
+            "Use `ssl_verify: true` or `ssl_verify: false`."
+        )
+
     # Boolean field given a string value
     if field_name in _BOOL_FIELDS and isinstance(raw_value, str):
         v = raw_value.strip().lower()
@@ -129,7 +142,7 @@ def _hint_for_cross_field(field_names: list[str]) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-class CondaConfigError(Exception):
+class CondaConfigError(CondaError):
     """Validation error for conda configuration with source provenance.
 
     Wraps a Pydantic ``ValidationError`` and enriches each field error with
@@ -234,4 +247,4 @@ class CondaConfigError(Exception):
         return "\n".join(lines).rstrip()
 
     def __repr__(self) -> str:
-        return f"CondaConfigError({len(self._field_errors())} field error(s))"
+        return str(self)

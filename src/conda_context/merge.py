@@ -310,7 +310,7 @@ class MergeEngine:
         seen: set[Path] = set()
 
         for entry in search_path:
-            path = Path(entry).expanduser()
+            path = Path(os.path.expandvars(str(entry))).expanduser()
             try:
                 mode = path.stat().st_mode
             except OSError:
