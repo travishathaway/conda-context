@@ -1,6 +1,6 @@
 # conda-context
 
-A Pydantic-backed replacement for `conda.base.context.Context` — with better validation errors, full source provenance, and a safe API for reading and writing `.condarc` files.
+A Pydantic-backed replacement for `conda.base.context.Context` — with better validation errors and full source provenance.
 
 ---
 
@@ -27,14 +27,100 @@ Each `conda-context` release is pinned to exactly one conda release. `conda-cont
 
 ## Installation
 
-Installation is currently not possible. You are advised to clone this repository and use it in a development environment.
+Clone the repository and enter the development environment with [pixi](https://pixi.sh):
+
+```bash
+git clone https://github.com/anomalyco/conda-context
+cd conda-context
+pixi shell -e dev
+```
+
+That installs conda 26.5.3, all dependencies, and the `condactx` command into the pixi dev environment shell. No other setup is required.
+
+### Trying it out with `condactx`
+
+`condactx` is a drop-in wrapper around the `conda` CLI. It monkey-patches `conda.base.context` with the Pydantic-backed replacement before handing off to conda's own command dispatcher. Every `conda` subcommand works as normal:
+
+```bash
+condactx info
+condactx config --show ssl_verify
+condactx config --show channel_priority
+```
+
+#### Better error messages for misconfigured `.condarc` files
+
+The main benefit over plain `conda` is what happens when your `.condarc` contains a bad value. Create a test file to see the difference:
+
+```bash
+cat > /tmp/bad_condarc.yaml << 'EOF'
+channels:
+  - defaults
+ssl_verify: yess
+channel_priority: turbo
+EOF
+```
+
+**With plain conda:**
+
+```bash
+CONDARC=/tmp/bad_condarc.yaml conda info
+```
+
+conda either silently ignores the bad value, coerces it without warning, or
+raises a generic traceback with no indication of which file or line caused the
+problem.
+
+**With `condactx`:**
+
+```bash
+$ CONDARC=/tmp/bad_condarc.yaml condactx info
+
+Configuration validation failed:
+
+  Field:   ssl_verify
+  Value:   'yess'
+  Error:   Value error, ssl_verify value 'yess' must be a boolean, a path to a
+           certificate bundle file, a path to a directory containing
+           certificates of trusted CAs, or 'truststore' to use the operating
+           system certificate store.
+  Source:  /tmp/bad_condarc.yaml, line 3
+  Hint:    Did you mean `ssl_verify: true`?
+
+  Field:   channel_priority
+  Value:   'turbo'
+  Error:   Input should be 'strict', 'flexible' or 'disabled'
+  Source:  /tmp/bad_condarc.yaml, line 4
+  Hint:    Valid values are: "flexible", "strict", "disabled".
+```
+
+Each error includes:
+
+- **Field** — the exact configuration key that failed.
+- **Value** — the raw value that was rejected.
+- **Error** — what was wrong with it.
+- **Source** — the file path and line number (or `environment variable CONDA_*`) where the value came from.
+- **Hint** — an actionable suggestion for how to fix it.
+
+Environment variable errors are identified the same way:
+
+```bash
+$ CONDA_SSL_VERIFY=yess condactx info
+
+Configuration validation failed:
+
+  Field:   ssl_verify
+  Value:   'yess'
+  Error:   ...
+  Source:  environment variable CONDA_SSL_VERIFY
+  Hint:    Did you mean `ssl_verify: true`?
+```
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.10+
 - `pydantic>=2.0`
 - `ruamel.yaml>=0.18,<0.19`
-- `conda==26.5.3` (optional — only required for monkey-patching and integration tests)
+- `conda==26.5.3` (optional — only required for `condactx` and integration tests)
 
 ---
 
