@@ -66,10 +66,23 @@ _SCENARIO_LABELS: dict[str, str] = {
     "test_bench_warm_property_read": "Warm: property read",
     "test_bench_warm_cached_property_first": "Warm: cached_property 1st",
     "test_bench_warm_cached_property_second": "Warm: cached_property 2nd",
+    "test_bench_condactx_info": "condactx info (CLI)",
     "test_bench_conda_init": "conda init (with file)",
     "test_bench_conda_field_first_access": "conda: field 1st access",
     "test_bench_conda_field_second_access": "conda: field 2nd access",
+    "test_bench_conda_info": "conda info (CLI)",
 }
+
+# Keys for the CLI end-to-end benchmarks — these are kept in a separate set of
+# charts because their timescale (hundreds of milliseconds) is orders of
+# magnitude larger than the in-process API benchmarks (microseconds), making
+# a shared chart unreadable.
+_CLI_KEYS: frozenset[str] = frozenset(
+    {
+        "test_bench_condactx_info",
+        "test_bench_conda_info",
+    }
+)
 
 # Colour scheme
 _COLOR_CONDA_CONTEXT = "#4C78A8"  # steel blue
@@ -138,6 +151,25 @@ def _parse_benchmarks(data: dict) -> tuple[dict, dict]:
     return cc, conda_ref
 
 
+def _partition_cli(
+    cc: dict, conda_ref: dict
+) -> tuple[dict, dict, dict, dict]:
+    """Split both dicts into API (in-process) and CLI (subprocess) partitions.
+
+    Returns
+    -------
+    api_cc       : conda-context API benchmarks (no CLI keys)
+    api_ref      : conda reference API benchmarks (no CLI keys)
+    cli_cc       : conda-context CLI benchmarks only
+    cli_ref      : conda reference CLI benchmarks only
+    """
+    api_cc = {k: v for k, v in cc.items() if k not in _CLI_KEYS}
+    api_ref = {k: v for k, v in conda_ref.items() if k not in _CLI_KEYS}
+    cli_cc = {k: v for k, v in cc.items() if k in _CLI_KEYS}
+    cli_ref = {k: v for k, v in conda_ref.items() if k in _CLI_KEYS}
+    return api_cc, api_ref, cli_cc, cli_ref
+
+
 def _us(seconds: float) -> float:
     """Convert seconds to microseconds."""
     return seconds * 1_000_000
@@ -165,17 +197,31 @@ def _label(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _make_bar_chart(cc: dict, conda_ref: dict) -> go.Figure:
+def _make_bar_chart(
+    cc: dict,
+    conda_ref: dict,
+    *,
+    unit: str = "µs",
+    chart_title: str = "Mean Execution Time by Scenario (lower is better)",
+) -> go.Figure:
     """Grouped bar chart: conda-context and conda side-by-side per scenario."""
     # Collect all scenarios that appear in at least one group, in a stable order.
     all_keys = list(dict.fromkeys(list(cc.keys()) + list(conda_ref.keys())))
     labels = [_label(k) for k in all_keys]
 
-    cc_means = [_mean_us(cc[k]) if k in cc else None for k in all_keys]
-    cc_errs = [_stddev_us(cc[k]) if k in cc else None for k in all_keys]
+    def _val(entry: dict) -> float:
+        v = _mean_us(entry)
+        return v / 1000 if unit == "ms" else v
 
-    conda_means = [_mean_us(conda_ref[k]) if k in conda_ref else None for k in all_keys]
-    conda_errs = [_stddev_us(conda_ref[k]) if k in conda_ref else None for k in all_keys]
+    def _err(entry: dict) -> float:
+        v = _stddev_us(entry)
+        return v / 1000 if unit == "ms" else v
+
+    cc_means = [_val(cc[k]) if k in cc else None for k in all_keys]
+    cc_errs = [_err(cc[k]) if k in cc else None for k in all_keys]
+
+    conda_means = [_val(conda_ref[k]) if k in conda_ref else None for k in all_keys]
+    conda_errs = [_err(conda_ref[k]) if k in conda_ref else None for k in all_keys]
 
     traces = [
         go.Bar(
@@ -184,7 +230,7 @@ def _make_bar_chart(cc: dict, conda_ref: dict) -> go.Figure:
             y=cc_means,
             error_y=dict(type="data", array=cc_errs, visible=True),
             marker_color=_COLOR_CONDA_CONTEXT,
-            text=[f"{v:.1f} µs" if v is not None else "" for v in cc_means],
+            text=[f"{v:.1f} {unit}" if v is not None else "" for v in cc_means],
             textposition="outside",
         ),
     ]
@@ -196,7 +242,7 @@ def _make_bar_chart(cc: dict, conda_ref: dict) -> go.Figure:
                 y=conda_means,
                 error_y=dict(type="data", array=conda_errs, visible=True),
                 marker_color=_COLOR_CONDA_REF,
-                text=[f"{v:.1f} µs" if v is not None else "" for v in conda_means],
+                text=[f"{v:.1f} {unit}" if v is not None else "" for v in conda_means],
                 textposition="outside",
             )
         )
@@ -204,9 +250,9 @@ def _make_bar_chart(cc: dict, conda_ref: dict) -> go.Figure:
     fig = go.Figure(data=traces)
     fig.update_layout(
         barmode="group",
-        title="Mean Execution Time by Scenario (lower is better)",
+        title=chart_title,
         xaxis_title="Benchmark Scenario",
-        yaxis_title="Mean time (µs)",
+        yaxis_title=f"Mean time ({unit})",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         template="plotly_white",
         height=520,
@@ -231,17 +277,27 @@ def _make_bar_chart(cc: dict, conda_ref: dict) -> go.Figure:
 # ---------------------------------------------------------------------------
 
 
-def _make_box_plots(cc: dict, conda_ref: dict) -> go.Figure:
+def _make_box_plots(
+    cc: dict,
+    conda_ref: dict,
+    *,
+    unit: str = "µs",
+    chart_title: str = "Per-Round Timing Distribution by Scenario",
+) -> go.Figure:
     """Side-by-side box plots showing per-round timing distributions."""
     all_keys = list(dict.fromkeys(list(cc.keys()) + list(conda_ref.keys())))
     labels = [_label(k) for k in all_keys]
+
+    def _rounds_converted(entry: dict) -> list[float]:
+        rounds = _rounds(entry)
+        return [v / 1000 for v in rounds] if unit == "ms" else rounds
 
     traces = []
     for k, lbl in zip(all_keys, labels, strict=False):
         if k in cc:
             traces.append(
                 go.Box(
-                    y=_rounds(cc[k]),
+                    y=_rounds_converted(cc[k]),
                     name=lbl,
                     legendgroup="conda-context",
                     legendgrouptitle_text="conda-context",
@@ -256,7 +312,7 @@ def _make_box_plots(cc: dict, conda_ref: dict) -> go.Figure:
         if k in conda_ref:
             traces.append(
                 go.Box(
-                    y=_rounds(conda_ref[k]),
+                    y=_rounds_converted(conda_ref[k]),
                     name=lbl,
                     legendgroup="conda-ref",
                     legendgrouptitle_text="conda (reference)",
@@ -271,9 +327,9 @@ def _make_box_plots(cc: dict, conda_ref: dict) -> go.Figure:
 
     fig = go.Figure(data=traces)
     fig.update_layout(
-        title="Per-Round Timing Distribution by Scenario",
+        title=chart_title,
         xaxis_title="Benchmark Scenario",
-        yaxis_title="Time per round (µs)",
+        yaxis_title=f"Time per round ({unit})",
         boxmode="group",
         template="plotly_white",
         height=520,
@@ -289,17 +345,27 @@ def _make_box_plots(cc: dict, conda_ref: dict) -> go.Figure:
 # ---------------------------------------------------------------------------
 
 
-def _make_summary_table(cc: dict, conda_ref: dict) -> go.Figure:
+def _make_summary_table(
+    cc: dict,
+    conda_ref: dict,
+    *,
+    unit: str = "µs",
+    table_title: str = "Summary: Mean Execution Times and Ratios",
+) -> go.Figure:
     """Sortable Plotly table with mean, stddev, and ratio columns."""
     all_keys = list(dict.fromkeys(list(cc.keys()) + list(conda_ref.keys())))
+
+    def _val(entry: dict, fn) -> float:
+        v = fn(entry)
+        return v / 1000 if unit == "ms" else v
 
     rows: list[tuple] = []
     for k in all_keys:
         lbl = _label(k)
-        cc_mean = _mean_us(cc[k]) if k in cc else None
-        cc_std = _stddev_us(cc[k]) if k in cc else None
-        ref_mean = _mean_us(conda_ref[k]) if k in conda_ref else None
-        ref_std = _stddev_us(conda_ref[k]) if k in conda_ref else None
+        cc_mean = _val(cc[k], _mean_us) if k in cc else None
+        cc_std = _val(cc[k], _stddev_us) if k in cc else None
+        ref_mean = _val(conda_ref[k], _mean_us) if k in conda_ref else None
+        ref_std = _val(conda_ref[k], _stddev_us) if k in conda_ref else None
 
         if cc_mean is not None and ref_mean is not None:
             ratio = ref_mean / cc_mean
@@ -332,10 +398,10 @@ def _make_summary_table(cc: dict, conda_ref: dict) -> go.Figure:
                 header=dict(
                     values=[
                         "<b>Scenario</b>",
-                        "<b>cc mean (µs)</b>",
-                        "<b>cc stddev (µs)</b>",
-                        "<b>conda mean (µs)</b>",
-                        "<b>conda stddev (µs)</b>",
+                        f"<b>cc mean ({unit})</b>",
+                        f"<b>cc stddev ({unit})</b>",
+                        f"<b>conda mean ({unit})</b>",
+                        f"<b>conda stddev ({unit})</b>",
                         "<b>Ratio (conda/cc)</b>",
                     ],
                     fill_color="#4C78A8",
@@ -355,7 +421,7 @@ def _make_summary_table(cc: dict, conda_ref: dict) -> go.Figure:
         ]
     )
     fig.update_layout(
-        title="Summary: Mean Execution Times and Ratios",
+        title=table_title,
         template="plotly_white",
         height=max(300, 60 + 30 * len(rows)),
         margin=dict(t=60, b=20),
@@ -476,6 +542,31 @@ def _make_narrative(cc: dict, conda_ref: dict, title: str) -> str:
             f"This cost is paid on every <code>_rebuild()</code> call."
         )
 
+    # 7. CLI end-to-end: condactx info vs conda info
+    condactx_info_key = "test_bench_condactx_info"
+    conda_info_key = "test_bench_conda_info"
+    if condactx_info_key in cc and conda_info_key in conda_ref:
+        cc_val = _mean_us(cc[condactx_info_key])
+        conda_val = _mean_us(conda_ref[conda_info_key])
+        ratio = conda_val / cc_val if cc_val > 0 else 0
+        if ratio >= 1:
+            comparison = (
+                f"<code>conda info</code> is <strong>{ratio:.2f}×</strong> slower than "
+                f"<code>condactx info</code>"
+            )
+        else:
+            comparison = (
+                f"<code>conda info</code> is <strong>{1 / ratio:.2f}×</strong> faster than "
+                f"<code>condactx info</code>"
+            )
+        _p(
+            f"<strong>CLI end-to-end comparison:</strong> "
+            f"<code>condactx info</code> (our patched Context) takes {_fmt(cc_val)} mean; "
+            f"<code>conda info</code> (reference) takes {_fmt(conda_val)} mean. "
+            f"{comparison}. Both measurements include Python interpreter start-up, "
+            f"all imports, and conda initialisation."
+        )
+
     if not lines:
         _p("No benchmark data found to interpret.")
 
@@ -535,6 +626,9 @@ def _assemble_html(
     fig_bar: go.Figure,
     fig_box: go.Figure,
     fig_table: go.Figure,
+    fig_cli_bar: go.Figure | None,
+    fig_cli_box: go.Figure | None,
+    fig_cli_table: go.Figure | None,
     narrative_html: str,
     title: str,
     source_file: str,
@@ -579,6 +673,49 @@ def _assemble_html(
     box_html = _fig_html(fig_box, "fig-box")
     table_html = _fig_html(fig_table, "fig-table")
 
+    # CLI section — only rendered when CLI benchmark data is present.
+    if fig_cli_bar is not None and fig_cli_box is not None and fig_cli_table is not None:
+        cli_bar_html = _fig_html(fig_cli_bar, "fig-cli-bar")
+        cli_box_html = _fig_html(fig_cli_box, "fig-cli-box")
+        cli_table_html = _fig_html(fig_cli_table, "fig-cli-table")
+        cli_section = f"""
+  <h2>CLI End-to-End Benchmarks</h2>
+  <p>
+    These benchmarks measure the total wall-clock time of a complete subprocess
+    invocation — including Python interpreter start-up, all imports, and conda
+    initialisation. They are shown separately from the in-process API benchmarks
+    above because their timescale (tens to hundreds of milliseconds) is orders of
+    magnitude larger, which would make the API charts unreadable if combined.
+  </p>
+
+  <h3>Mean Execution Time — CLI (Grouped Bar Chart)</h3>
+  <p>
+    Each bar shows the <strong>mean</strong> execution time in milliseconds (ms) over all
+    benchmark rounds. Error bars represent ±1 standard deviation. Lower is better.
+  </p>
+  {cli_bar_html}
+
+  <h3>Per-Round Distribution — CLI (Box Plots)</h3>
+  <p>
+    Box plots show the spread of individual round times in milliseconds. The box spans the
+    interquartile range (25th–75th percentile); the line inside is the median;
+    whiskers extend to 1.5×IQR; dots are outliers. The diamond marker shows the mean.
+  </p>
+  {cli_box_html}
+
+  <h3>Summary Table — CLI</h3>
+  <p>
+    All times in milliseconds (ms). The <em>Ratio</em> column is
+    <code>conda mean / conda-context mean</code>: values above 1.0 mean conda is slower.
+  </p>
+  {cli_table_html}"""
+    else:
+        cli_section = """
+  <h2>CLI End-to-End Benchmarks</h2>
+  <p class="meta">
+    No CLI benchmark data found in this run (requires conda and condactx on PATH).
+  </p>"""
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -598,14 +735,21 @@ def _assemble_html(
     {narrative_html}
   </div>
 
-  <h2>Mean Execution Time (Grouped Bar Chart)</h2>
+  <h2>In-Process API Benchmarks</h2>
+  <p>
+    These benchmarks measure fine-grained Python API calls (Context construction,
+    MergeEngine, Pydantic model validation) entirely within the test process.
+    Times are in microseconds (µs).
+  </p>
+
+  <h3>Mean Execution Time — API (Grouped Bar Chart)</h3>
   <p>
     Each bar shows the <strong>mean</strong> execution time in microseconds (µs) over all
     benchmark rounds. Error bars represent ±1 standard deviation. Lower is better.
   </p>
   {bar_html}
 
-  <h2>Per-Round Distribution (Box Plots)</h2>
+  <h3>Per-Round Distribution — API (Box Plots)</h3>
   <p>
     Box plots show the spread of individual round times. The box spans the
     interquartile range (25th–75th percentile); the line inside is the median;
@@ -613,12 +757,13 @@ def _assemble_html(
   </p>
   {box_html}
 
-  <h2>Summary Table</h2>
+  <h3>Summary Table — API</h3>
   <p>
     All times in microseconds (µs). The <em>Ratio</em> column is
     <code>conda mean / conda-context mean</code>: values above 1.0 mean conda is slower.
   </p>
   {table_html}
+  {cli_section}
 
   <footer>
     Generated by <code>scripts/generate_benchmark_report.py</code> &mdash;
@@ -703,9 +848,33 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print("Building figures...")
-    fig_bar = _make_bar_chart(cc, conda_ref)
-    fig_box = _make_box_plots(cc, conda_ref)
-    fig_table = _make_summary_table(cc, conda_ref)
+    api_cc, api_ref, cli_cc, cli_ref = _partition_cli(cc, conda_ref)
+
+    fig_bar = _make_bar_chart(api_cc, api_ref)
+    fig_box = _make_box_plots(api_cc, api_ref)
+    fig_table = _make_summary_table(api_cc, api_ref)
+
+    if cli_cc or cli_ref:
+        fig_cli_bar: go.Figure | None = _make_bar_chart(
+            cli_cc,
+            cli_ref,
+            unit="ms",
+            chart_title="Mean Execution Time — CLI End-to-End (lower is better)",
+        )
+        fig_cli_box: go.Figure | None = _make_box_plots(
+            cli_cc,
+            cli_ref,
+            unit="ms",
+            chart_title="Per-Round Timing Distribution — CLI End-to-End",
+        )
+        fig_cli_table: go.Figure | None = _make_summary_table(
+            cli_cc,
+            cli_ref,
+            unit="ms",
+            table_title="Summary: CLI End-to-End Execution Times and Ratios",
+        )
+    else:
+        fig_cli_bar = fig_cli_box = fig_cli_table = None
 
     print("Writing narrative...")
     narrative = _make_narrative(cc, conda_ref, args.title)
@@ -715,6 +884,9 @@ def main(argv: list[str] | None = None) -> int:
         fig_bar,
         fig_box,
         fig_table,
+        fig_cli_bar,
+        fig_cli_box,
+        fig_cli_table,
         narrative,
         title=args.title,
         source_file=str(args.json_path),
@@ -732,3 +904,7 @@ def main(argv: list[str] | None = None) -> int:
     args.output.write_text(html, encoding="utf-8")
     size_kb = args.output.stat().st_size / 1024
     print(f"Report written to: {args.output}  ({size_kb:.0f} KB)")
+
+
+if __name__ == "__main__":
+    main()

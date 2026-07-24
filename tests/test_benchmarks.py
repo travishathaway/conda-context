@@ -22,6 +22,14 @@ These time property access on a Context that is already constructed:
   bench_warm_cached_property_first  ctx.user_agent first access (deferred)
   bench_warm_cached_property_second ctx.user_agent second access (cached)
 
+CLI end-to-end benchmarks
+--------------------------
+These time a full subprocess invocation of the conda CLI.  They require
+conda to be importable and condactx to be on PATH; they are skipped otherwise.
+
+  bench_condactx_info               ``condactx info`` — via our patched Context
+  bench_conda_info                  ``conda info``    — conda's own Context (reference)
+
 Conda reference benchmarks
 --------------------------
 These require conda to be importable; they are skipped otherwise.
@@ -45,6 +53,7 @@ Exclude from normal test runs:
 
 from __future__ import annotations
 
+import shutil as _shutil
 from pathlib import Path
 
 import pytest
@@ -229,6 +238,13 @@ _conda_skip = pytest.mark.skipif(
     reason="conda is not importable — skipping conda reference benchmarks",
 )
 
+_CONDACTX_ON_PATH = _shutil.which("condactx") is not None
+
+_cli_skip = pytest.mark.skipif(
+    not (_CONDA_AVAILABLE and _CONDACTX_ON_PATH),
+    reason="conda not importable or condactx not on PATH — skipping CLI benchmarks",
+)
+
 
 @_conda_skip
 def test_bench_conda_init(benchmark, condarc_file: Path):
@@ -305,3 +321,63 @@ def test_bench_conda_field_second_access(benchmark, condarc_file: Path):
     _ = ctx.ssl_verify
 
     benchmark(lambda: ctx.ssl_verify)
+
+
+# ---------------------------------------------------------------------------
+# CLI end-to-end benchmarks (skipped when conda is not importable or
+# condactx is not on PATH)
+# ---------------------------------------------------------------------------
+
+
+@_cli_skip
+def test_bench_condactx_info(benchmark):
+    """Time a full ``condactx info`` subprocess invocation end-to-end.
+
+    This measures the wall-clock cost of running conda's ``info`` command
+    through the condactx wrapper (our patched Context) including Python
+    interpreter start-up, import time, and all conda initialisation.
+
+    Uses pedantic mode with a small round count because each invocation
+    takes hundreds of milliseconds.
+    """
+    import subprocess
+
+    def _run():
+        result = subprocess.run(
+            ["condactx", "info"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"condactx info failed (exit {result.returncode}):\n{result.stderr}"
+        )
+
+    benchmark.pedantic(_run, rounds=5, warmup_rounds=1)
+
+
+@_cli_skip
+def test_bench_conda_info(benchmark):
+    """Time a full ``conda info`` subprocess invocation end-to-end.
+
+    This is the reference baseline for the CLI benchmark: the same
+    ``conda info`` command run without the condactx wrapper, using
+    conda's own unpatched Context. Paired with ``test_bench_condactx_info``
+    to measure the overhead introduced by conda-context's import hook and
+    eager-load strategy.
+
+    Uses pedantic mode with a small round count because each invocation
+    takes hundreds of milliseconds.
+    """
+    import subprocess
+
+    def _run():
+        result = subprocess.run(
+            ["conda", "info"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"conda info failed (exit {result.returncode}):\n{result.stderr}"
+        )
+
+    benchmark.pedantic(_run, rounds=5, warmup_rounds=1)

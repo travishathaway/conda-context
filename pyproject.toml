@@ -85,6 +85,7 @@ pytest-cov = ">=4"
 pytest-benchmark = ">=4"
 ruff = ">=0.4"
 prek = ">=0.4"
+plotly = ">=6.9.0,<7"
 
 # Python-version features — pin the interpreter for CI matrix jobs
 [tool.pixi.feature.py310.dependencies]
@@ -101,6 +102,7 @@ fmt = "ruff format src/ tests/"
 pre-commit-install = "prek install"
 pre-commit-run = "prek run --all-files"
 prek = "prek"
+benchmark-report = "pytest -m 'benchmark' --benchmark-json benchmark.json && python scripts/generate_benchmark_report.py benchmark.json"
 
 # Environments
 [tool.pixi.environments]

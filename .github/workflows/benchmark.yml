@@ -1,0 +1,45 @@
+name: Benchmarks
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    name: "Run benchmarks and publish report"
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          pixi-version: v0.41.4
+          environments: py314
+          cache: true
+
+      - name: Run benchmarks
+        run: |
+          pixi run -e py314 pytest -m benchmark \
+            --benchmark-warmup=on \
+            --benchmark-min-rounds=10 \
+            --benchmark-json=benchmark.json
+
+      - name: Generate HTML report
+        run: pixi run -e py314 python scripts/generate_benchmark_report.py benchmark.json
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: .
+          include_files: benchmark_report.html,index.html
+          destination_dir: .
+          force_orphan: false
+          commit_message: "chore: update benchmark report [skip ci]"
