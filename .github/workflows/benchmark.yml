@@ -6,20 +6,31 @@ on:
       - main
   workflow_dispatch:
 
+# Allow only one concurrent deployment so a new push cancels an in-progress run.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   benchmark:
     name: "Run benchmarks and publish report"
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: prefix-dev/setup-pixi@v0.10.0
+      - uses: prefix-dev/setup-pixi@v0.8.8
         with:
-          pixi-version: v0.73.0
+          pixi-version: v0.41.4
           environments: py314
           cache: true
 
@@ -33,13 +44,17 @@ jobs:
       - name: Generate HTML report
         run: pixi run -e py314 python scripts/generate_benchmark_report.py benchmark.json
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Assemble Pages artifact
+        run: |
+          mkdir -p _site
+          cp benchmark_report.html _site/
+          cp index.html _site/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: .
-          include_files: benchmark_report.html,index.html
-          destination_dir: .
-          force_orphan: false
-          commit_message: "chore: update benchmark report [skip ci]"
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
