@@ -47,8 +47,7 @@ jobs:
       - name: Assemble Pages artifact
         run: |
           mkdir -p _site
-          cp benchmark_report.html _site/
-          cp index.html _site/
+          cp benchmark_report.html _site/index.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
