@@ -2,17 +2,15 @@
 
 A Pydantic-backed replacement for `conda.base.context.Context` — with better validation errors and full source provenance.
 
----
+```[!WARNING]
 
-> **EXPERIMENTAL — DO NOT USE IN PRODUCTION**
->
-> This library is in early development and makes no stability guarantees.
-> The API may change without notice between releases. It has not been
-> battle-tested against the full range of conda configurations in real
-> environments. Use it for experimentation, tooling prototypes, and conda
-> plugin development only.
+This library is in early development and makes no stability guarantees.
+The API may change without notice between releases. It has not been
+battle-tested against the full range of conda configurations in real
+environments. Use it for experimentation, tooling prototypes, and conda
+plugin development only.
 
----
+```
 
 ## What it is
 
