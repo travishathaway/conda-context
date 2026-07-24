@@ -8,12 +8,34 @@ configuration files (or environment variables) the bad value came from.
 
 from __future__ import annotations
 
+import io
+import sys
 from typing import Any
 
 from conda.exceptions import CondaError
 from pydantic import ValidationError
+from rich.console import Console
+from rich.text import Text
 
 from .provenance import ProvenanceInfo, ProvenanceMap
+
+# ---------------------------------------------------------------------------
+# Rich → ANSI string helper
+# ---------------------------------------------------------------------------
+
+
+def _render_ansi(text: Text, use_color: bool) -> str:
+    """Render a rich Text object to a plain string.
+
+    When *use_color* is True the string contains ANSI escape codes produced
+    by rich's own rendering engine.  When False the string is plain text with
+    no escape sequences.
+    """
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=use_color, highlight=False, width=120)
+    console.print(text, end="")
+    return buf.getvalue()
+
 
 # ---------------------------------------------------------------------------
 # Hint generation helpers
@@ -215,7 +237,9 @@ class CondaConfigError(CondaError):
         return self._field_errors()
 
     def __str__(self) -> str:
-        lines: list[str] = ["Configuration validation failed:\n"]
+        use_color = hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
+        text = Text()
+        text.append("Configuration validation failed:\n", style="bold red")
         for entry in self._field_errors():
             field = entry["field"]
             value = entry["value"]
@@ -223,28 +247,37 @@ class CondaConfigError(CondaError):
             hint = entry["hint"]
             source = entry["source"]
 
-            lines.append(f"  Field:   {field}")
-            lines.append(f"  Value:   {value!r}")
-            lines.append(f"  Error:   {message}")
+            text.append("  Field:   ", style="bold yellow")
+            text.append(f"{field}\n", style="yellow")
+
+            text.append("  Value:   ", style="bold cyan")
+            text.append(f"{value!r}\n", style="cyan")
+
+            text.append("  Error:   ", style="bold red")
+            text.append(f"{message}\n", style="red")
 
             if source:
                 src_type = source.get("type", "")
+                text.append("  Source:  ", style="bold blue")
                 if src_type == "yaml_file":
                     loc = source.get("path", "")
                     if "line" in source:
                         loc = f"{loc}, line {source['line']}"
-                    lines.append(f"  Source:  {loc}")
+                    text.append(f"{loc}\n", style="blue")
                 elif src_type == "env_var":
-                    lines.append(f"  Source:  environment variable {source['env_var']}")
+                    text.append(f"environment variable {source['env_var']}\n", style="blue")
                 elif src_type == "argparse":
-                    lines.append("  Source:  command-line argument")
+                    text.append("command-line argument\n", style="blue")
+                else:
+                    text.append("\n")
 
             if hint:
-                lines.append(f"  Hint:    {hint}")
+                text.append("  Hint:    ", style="bold green")
+                text.append(f"{hint}\n", style="green")
 
-            lines.append("")  # blank separator between errors
+            text.append("\n")
 
-        return "\n".join(lines).rstrip()
+        return _render_ansi(text, use_color).rstrip()
 
     def __repr__(self) -> str:
         return str(self)
