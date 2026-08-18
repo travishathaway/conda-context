@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import msgspec
+import msgspec.structs
 
 from conda_context.constants import (
     CONDA_LIST_FIELDS,
@@ -689,9 +690,9 @@ class CondaConfigMsgspec(msgspec.Struct, forbid_unknown_fields=False):
         if isinstance(v, str):
             lo = v.strip().lower()
             if lo in ("true", "1", "yes"):
-                object.__setattr__(self, "ssl_verify", True)
+                msgspec.structs.force_setattr(self, "ssl_verify", True)
             elif lo in ("false", "0", "no"):
-                object.__setattr__(self, "ssl_verify", False)
+                msgspec.structs.force_setattr(self, "ssl_verify", False)
             else:
                 # Keep as str — validate truststore or path
                 if v == "truststore":
