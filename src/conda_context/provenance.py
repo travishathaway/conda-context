@@ -33,7 +33,7 @@ class ProvenanceInfo:
     def describe(self) -> str:
         """Return a short human-readable description of the source location."""
         if self.source_type == "yaml_file":
-            loc = str(self.path)
+            loc = self.path.as_posix() if self.path is not None else ""
             if self.line is not None:
                 loc = f"{loc}, line {self.line}"
             return loc
