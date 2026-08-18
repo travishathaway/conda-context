@@ -6,7 +6,9 @@ and private API surface required for plugin use and module-attribute
 monkey-patching.
 
 Architecture (from design.md D1):
-  - ``CondaConfig`` (Pydantic) handles type coercion and validation.
+  - ``CondaConfig`` (Pydantic) or ``CondaConfigMsgspec`` (msgspec) handles
+    type coercion and validation. The backend is selected at runtime via the
+    ``conda_context_backend`` configuration field.
   - ``MergeEngine`` resolves layered sources + builds ProvenanceMap.
   - ``Context`` wraps both, exposing conda's mutation protocol and all
     computed properties.
@@ -27,8 +29,10 @@ from os.path import abspath, expanduser, isdir, isfile, join
 from pathlib import Path
 from typing import Any, ClassVar
 
-from pydantic import ValidationError
+import pydantic
+import msgspec as _msgspec
 
+from ._schema_backend import get_backend
 from .constants import (
     APP_NAME,
     DEFAULT_CHANNELS_UNIX,
@@ -41,7 +45,6 @@ from .constants import (
 from .errors import CondaConfigError
 from .merge import MergeEngine
 from .provenance import ProvenanceMap
-from .schemas._26_5_3 import CondaConfig
 
 log = logging.getLogger(__name__)
 
@@ -425,18 +428,16 @@ class Context:
         """Validate the current configuration, raising CondaConfigError on failure.
 
         Replaces conda's ``Context.validate_configuration()`` with a
-        provenance-aware version: any Pydantic ValidationError is enriched
+        provenance-aware version: any ValidationError is enriched
         with the exact file/line or env-var origin of each bad value before
         being re-raised as ``CondaConfigError``.
 
         Called by ``conda install``, ``conda config``, and friends.
         """
         try:
-            # Re-validate by constructing a fresh CondaConfig from raw_data.
-            # This mirrors what _rebuild() does but is safe to call externally.
-            CondaConfig(**self.raw_data)
-        except ValidationError as exc:
-            raise CondaConfigError(exc, self._provenance) from exc
+            self._backend.build(self.raw_data)
+        except (pydantic.ValidationError, _msgspec.ValidationError) as exc:
+            raise CondaConfigError(self._backend.errors(exc), self._provenance) from exc
 
     def validate_all(self) -> None:
         """Validate all configuration sources, raising CondaConfigError on failure.
@@ -459,13 +460,16 @@ class Context:
 
     @property
     def parameter_names(self) -> tuple[str, ...]:
-        """All canonical parameter names (including private ``_`` prefixed ones)."""
-        fields = CondaConfig.model_fields
+        """All canonical parameter names (including private ``_`` prefixed ones).
+
+        Returns the names that ``list_parameters()`` is derived from.
+        Non-aliased fields use the canonical field name; aliased fields use
+        ``_<field_name>`` to signal they are "private" in conda's convention.
+        """
+        meta = self._backend.field_metadata()
         names: list[str] = []
-        for field_name, field_info in fields.items():
-            # Re-apply the underscore prefix convention that conda uses for
-            # parameters that have public aliases (e.g. ``_default_activation_env``).
-            if field_info.alias and field_info.alias != field_name:
+        for field_name, field_meta in meta.items():
+            if field_meta.aliases:
                 names.append(f"_{field_name}")
             else:
                 names.append(field_name)
@@ -474,57 +478,45 @@ class Context:
     @property
     def parameter_names_and_aliases(self) -> tuple[str, ...]:
         """All parameter names including all registered aliases."""
-        fields = CondaConfig.model_fields
+        meta = self._backend.field_metadata()
         seen: dict[str, None] = {}
-        for field_name, field_info in fields.items():
-            # Canonical name
+        for field_name, field_meta in meta.items():
             seen[field_name] = None
-            # Alias (if different from canonical)
-            if field_info.alias and field_info.alias != field_name:
-                seen[field_info.alias] = None
-            # validation_alias may hold a list of additional aliases
-            va = field_info.validation_alias
-            if va is not None:
-                if isinstance(va, str):
-                    seen[va] = None
-                elif hasattr(va, "choices"):
-                    # AliasChoices / AliasPath from pydantic
-                    for choice in va.choices:
-                        if isinstance(choice, str):
-                            seen[choice] = None
+            for alias in field_meta.aliases:
+                seen[alias] = None
         return tuple(seen)
 
     def list_parameters(self, aliases: bool = False) -> tuple[str, ...]:
-        """Return all parameter names, optionally including aliases.
+        """Return all parameter names that are valid ``getattr`` targets on ``Context``.
 
         Mirrors ``conda.base.context.Context.list_parameters()``.
 
+        The returned names are the actual ``@property`` names on the ``Context``
+        class — the same names used by ``conda config --show`` with ``getattr``.
+        This is derived from ``category_map``, which is the authoritative source
+        of Context property names.
+
         Args:
-            aliases: If ``True``, include aliases in insertion order.
-                     If ``False`` (default), return sorted canonical names.
+            aliases: If ``True``, include all aliases in insertion order.
+                     If ``False`` (default), return sorted property names.
         """
         if aliases:
             return self.parameter_names_and_aliases
-        return tuple(sorted(name.lstrip("_") for name in self.parameter_names))
+        # category_map values are the actual Context property names
+        all_names: dict[str, None] = {}
+        for names in self.category_map.values():
+            for name in names:
+                all_names[name] = None
+        return tuple(sorted(all_names))
 
     def name_for_alias(self, alias: str, ignore_private: bool = True) -> str | None:
         """Return the canonical parameter name for *alias*, or ``None``.
 
         Mirrors ``conda.base.context.Context.name_for_alias()``.
         """
-        fields = CondaConfig.model_fields
-        for field_name, field_info in fields.items():
-            candidates = [field_name]
-            if field_info.alias:
-                candidates.append(field_info.alias)
-            va = field_info.validation_alias
-            if va is not None:
-                if isinstance(va, str):
-                    candidates.append(va)
-                elif hasattr(va, "choices"):
-                    for choice in va.choices:
-                        if isinstance(choice, str):
-                            candidates.append(choice)
+        meta = self._backend.field_metadata()
+        for field_name, field_meta in meta.items():
+            candidates = [field_name, *field_meta.aliases]
             if alias in candidates:
                 if ignore_private and field_name.startswith("_"):
                     return None
@@ -539,28 +531,16 @@ class Context:
 
         Raises ``KeyError`` if the parameter is unknown.
         """
-        # Normalise: strip leading underscore that conda uses for aliased params
         lookup = parameter_name.lstrip("_")
-        fields = CondaConfig.model_fields
-        if lookup not in fields:
+        meta = self._backend.field_metadata()
+        if lookup not in meta:
             raise KeyError(parameter_name)
-        field_info = fields[lookup]
-        aliases: list[str] = []
-        if field_info.alias and field_info.alias != lookup:
-            aliases.append(field_info.alias)
-        va = field_info.validation_alias
-        if va is not None:
-            if isinstance(va, str):
-                aliases.append(va)
-            elif hasattr(va, "choices"):
-                for choice in va.choices:
-                    if isinstance(choice, str):
-                        aliases.append(choice)
+        field_meta = meta[lookup]
         return {
             "name": lookup,
-            "aliases": aliases,
-            "description": field_info.description or "",
-            "parameter_type": str(field_info.annotation),
+            "aliases": field_meta.aliases,
+            "description": field_meta.description,
+            "parameter_type": str(field_meta.annotation),
         }
 
     def typify_parameter(self, parameter_name: str, value: Any, source: Any) -> tuple[str, Any]:
@@ -572,17 +552,10 @@ class Context:
         Raises ``KeyError`` if the parameter is unknown.
         """
         lookup = parameter_name.lstrip("_")
-        fields = CondaConfig.model_fields
-        if lookup not in fields:
+        meta = self._backend.field_metadata()
+        if lookup not in meta:
             raise KeyError(parameter_name)
-        # Use Pydantic to coerce: construct a model with only this field set
-        try:
-            coerced = CondaConfig.model_validate({lookup: value})
-            return (lookup, getattr(coerced, lookup))
-        except ValidationError:
-            # Return the raw value if coercion fails; let validate_configuration
-            # surface the error with provenance later.
-            return (lookup, value)
+        return self._backend.validate_single(lookup, value)
 
     def _rebuild(self) -> None:
         """Re-run merge and validation after any source change."""
@@ -597,10 +570,13 @@ class Context:
         self.raw_data = merged
         self._provenance: ProvenanceMap = provenance
 
+        backend_name = merged.get("conda_context_backend", "pydantic")
+        self._backend = get_backend(backend_name)
+
         try:
-            self._config = CondaConfig(**merged)
-        except ValidationError as exc:
-            raise CondaConfigError(exc, provenance) from exc
+            self._config = self._backend.build(merged)
+        except (pydantic.ValidationError, _msgspec.ValidationError) as exc:
+            raise CondaConfigError(self._backend.errors(exc), provenance) from exc
 
     # ------------------------------------------------------------------
     # Raw config field properties — delegate to CondaConfig
@@ -1057,6 +1033,10 @@ class Context:
     @property
     def no_plugins(self) -> bool:
         return self._config.no_plugins
+
+    @property
+    def conda_context_backend(self) -> str:
+        return self._config.conda_context_backend
 
     # ------------------------------------------------------------------
     # Tier 1: Pure computed properties

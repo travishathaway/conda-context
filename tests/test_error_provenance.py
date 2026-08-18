@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ValidationError, field_validator
 
+from conda_context._schema_backend import PydanticBackend
 from conda_context.errors import CondaConfigError
 from conda_context.provenance import ProvenanceInfo, ProvenanceMap
 
@@ -35,7 +36,8 @@ def _make_error(data: dict, provenance: ProvenanceMap | None = None) -> CondaCon
         _DummyConfig(**data)
         pytest.fail("Expected ValidationError was not raised")
     except ValidationError as exc:
-        return CondaConfigError(exc, provenance or {})
+        backend = PydanticBackend()
+        return CondaConfigError(backend.errors(exc), provenance or {})
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +138,8 @@ class TestCondaConfigErrorStr:
             _DummyConfig(ssl_verify="bad", channel_priority="invalid")
             pytest.fail("expected error")
         except ValidationError as exc:
-            err = CondaConfigError(exc, {})
+            backend = PydanticBackend()
+            err = CondaConfigError(backend.errors(exc), {})
         s = str(err)
         assert "ssl_verify" in s
         assert "channel_priority" in s
@@ -186,9 +189,11 @@ class TestHintGeneration:
 
             if not isinstance(exc, ValidationError):
                 pytest.skip("always_copy='yess' did not raise ValidationError")
+            from conda_context._schema_backend import PydanticBackend
             from conda_context.errors import CondaConfigError
 
-            err = CondaConfigError(exc, {})
+            backend = PydanticBackend()
+            err = CondaConfigError(backend.errors(exc), {})
         entry = err.as_dict()[0]
         assert entry["hint"] is not None
         assert "true" in entry["hint"].lower() or "false" in entry["hint"].lower()
@@ -210,7 +215,8 @@ class TestHintGeneration:
             _DummyConfig(channel_priority="invalid")
             pytest.fail("expected error")
         except ValidationError as exc:
-            err = CondaConfigError(exc, {})
+            backend = PydanticBackend()
+            err = CondaConfigError(backend.errors(exc), {})
         entry = err.as_dict()[0]
         # The hint should list valid choices
         assert entry["hint"] is not None

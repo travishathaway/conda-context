@@ -1,7 +1,7 @@
 """
 CondaConfigError — enriched validation error for conda configuration.
 
-Wraps one or more Pydantic ValidationError instances and enriches each
+Wraps a list of FieldError instances (library-agnostic) and enriches each
 field error with ProvenanceInfo so users see exactly where in their
 configuration files (or environment variables) the bad value came from.
 """
@@ -13,10 +13,10 @@ import sys
 from typing import Any
 
 from conda.exceptions import CondaError
-from pydantic import ValidationError
 from rich.console import Console
 from rich.text import Text
 
+from ._schema_backend import FieldError
 from .provenance import ProvenanceInfo, ProvenanceMap
 
 # ---------------------------------------------------------------------------
@@ -167,8 +167,8 @@ def _hint_for_cross_field(field_names: list[str]) -> str | None:
 class CondaConfigError(CondaError):
     """Validation error for conda configuration with source provenance.
 
-    Wraps a Pydantic ``ValidationError`` and enriches each field error with
-    a ``ProvenanceInfo`` so that error messages reference the exact file,
+    Wraps a list of ``FieldError`` instances and enriches each field error
+    with a ``ProvenanceInfo`` so that error messages reference the exact file,
     line number, or environment variable that produced the invalid value.
 
     Human-readable output via ``str(err)`` and machine-readable output via
@@ -177,10 +177,10 @@ class CondaConfigError(CondaError):
 
     def __init__(
         self,
-        pydantic_error: ValidationError,
+        field_errors: list[FieldError],
         provenance: ProvenanceMap,
     ) -> None:
-        self._pydantic_error = pydantic_error
+        self._field_errors_list = field_errors
         self._provenance = provenance
         super().__init__(str(self))
 
@@ -191,16 +191,14 @@ class CondaConfigError(CondaError):
     def _field_errors(self) -> list[dict[str, Any]]:
         """Return a list of enriched error dicts, one per field error."""
         errors = []
-        for err in self._pydantic_error.errors(include_url=False):
-            loc = err.get("loc", ())
-            field_name = loc[0] if loc else "<unknown>"
-            raw_value = err.get("input")
+        for fe in self._field_errors_list:
+            field_name = fe.loc[0] if fe.loc else "<unknown>"
+            raw_value = fe.input
             prov: ProvenanceInfo | None = self._provenance.get(str(field_name))
 
             hint = _generate_hint(str(field_name), raw_value)
             if hint is None:
-                # Try cross-field hint using all field names in this error batch
-                hint = _hint_for_cross_field([str(loc_item) for loc_item in loc])
+                hint = _hint_for_cross_field([str(loc_item) for loc_item in fe.loc])
 
             source: dict[str, Any] = {}
             if prov is not None:
@@ -216,7 +214,7 @@ class CondaConfigError(CondaError):
                 {
                     "field": str(field_name),
                     "value": raw_value,
-                    "message": err.get("msg", ""),
+                    "message": fe.msg,
                     "hint": hint,
                     "source": source,
                 }
