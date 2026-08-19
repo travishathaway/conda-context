@@ -49,7 +49,8 @@ class TestProvenanceInfo:
     def test_yaml_file_describe(self):
         prov = ProvenanceInfo(source_type="yaml_file", path=Path("/home/user/.condarc"), line=7)
         desc = prov.describe()
-        assert "/home/user/.condarc" in desc
+        # Normalize separators so the test passes on both Windows and POSIX.
+        assert "/home/user/.condarc" in desc.replace("\\", "/")
         assert "7" in desc
 
     def test_env_var_describe(self):
@@ -82,7 +83,7 @@ class TestCondaConfigErrorProvenance:
         entry = as_dict[0]
         assert entry["field"] == "ssl_verify"
         assert entry["source"]["type"] == "yaml_file"
-        assert "~/.condarc" in entry["source"]["path"]
+        assert "~/.condarc" in entry["source"]["path"].replace("\\", "/")
         assert entry["source"]["line"] == 7
 
     def test_error_from_env_var_includes_var_name(self):
@@ -123,7 +124,7 @@ class TestCondaConfigErrorStr:
         prov = {"ssl_verify": ProvenanceInfo("yaml_file", Path("~/.condarc"), 7)}
         err = _make_error({"ssl_verify": "yess"}, prov)
         s = str(err)
-        assert "~/.condarc" in s
+        assert "~/.condarc" in s.replace("\\", "/")
         assert "7" in s
 
     def test_str_contains_env_var_name(self):
