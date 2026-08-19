@@ -135,6 +135,7 @@ _ENV_VAR_MAP: dict[str, str] = {
     "CONDA_USE_ONLY_TAR_BZ2": "use_only_tar_bz2",
     "CONDA_VERBOSITY": "verbosity",
     "CONDA_VERIFY_SSL": "ssl_verify",
+    "CONTEXT_BACKEND": "conda_context_backend",
     "CONDA_VERIFY_THREADS": "verify_threads",
 }
 

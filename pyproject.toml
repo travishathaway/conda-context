@@ -18,6 +18,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+  "msgspec>=0.18",
   "pydantic>=2",
   "rich>=13",
   "ruamel-yaml>=0.18,<0.19",
@@ -71,6 +72,7 @@ platforms = ["osx-arm64", "linux-64", "linux-aarch64", "win-64"]
 # Default feature — runtime + the package itself (always active)
 [tool.pixi.dependencies]
 conda = "==26.5.3"
+msgspec = ">=0.18"
 
 [tool.pixi.pypi-dependencies]
 conda_context = { path = ".", editable = true }

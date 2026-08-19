@@ -885,6 +885,19 @@ class CondaConfig(BaseModel):
     )
 
     # ------------------------------------------------------------------
+    # Backend selection
+    # ------------------------------------------------------------------
+
+    conda_context_backend: str = Field(
+        default="pydantic",
+        description=(
+            "Validation backend to use for conda-context configuration loading.\n"
+            "Valid values are 'pydantic' (default) and 'msgspec'.\n"
+            "Can be set in .condarc or via CONTEXT_BACKEND environment variable.\n"
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Field validators
     # ------------------------------------------------------------------
 

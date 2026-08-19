@@ -63,6 +63,8 @@ pytest.importorskip("pytest_benchmark", reason="pytest-benchmark is required to 
 from conda_context.context import Context  # noqa: E402
 from conda_context.merge import MergeEngine  # noqa: E402
 from conda_context.schemas._26_5_3 import CondaConfig  # noqa: E402
+from conda_context.schemas._26_5_3_msgspec import CondaConfigMsgspec  # noqa: E402
+from conda_context._schema_backend import normalize_alias_keys  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -168,6 +170,38 @@ def test_bench_pydantic_empty(benchmark):
 def test_bench_pydantic_full_merged(benchmark, full_merged_dict: dict):
     """Time CondaConfig(**full_merged_dict) — realistic input, no I/O."""
     benchmark(CondaConfig, **full_merged_dict)
+
+
+# ---------------------------------------------------------------------------
+# Cold-cache: msgspec model construction in isolation
+# ---------------------------------------------------------------------------
+
+
+def test_bench_msgspec_empty(benchmark):
+    """Time msgspec.convert({}, CondaConfigMsgspec) — all defaults, no I/O."""
+    import msgspec
+
+    benchmark(msgspec.convert, {}, CondaConfigMsgspec)
+
+
+def test_bench_msgspec_full_merged(benchmark, full_merged_dict: dict):
+    """Time normalize_alias_keys + msgspec.convert(full_merged_dict, ...) — canonical keys."""
+    import msgspec
+
+    def _build():
+        msgspec.convert(normalize_alias_keys(full_merged_dict), CondaConfigMsgspec)
+
+    benchmark(_build)
+
+
+def test_bench_msgspec_full_aliases(benchmark, full_merged_dict_with_aliases: dict):
+    """Time normalize_alias_keys + msgspec.convert(alias_dict, ...) — exercises normalization."""
+    import msgspec
+
+    def _build():
+        msgspec.convert(normalize_alias_keys(full_merged_dict_with_aliases), CondaConfigMsgspec)
+
+    benchmark(_build)
 
 
 # ---------------------------------------------------------------------------
