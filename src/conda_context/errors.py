@@ -204,7 +204,7 @@ class CondaConfigError(CondaError):
             if prov is not None:
                 source["type"] = prov.source_type
                 if prov.path is not None:
-                    source["path"] = prov.path.as_posix()
+                    source["path"] = str(prov.path)
                 if prov.line is not None:
                     source["line"] = prov.line
                 if prov.env_var is not None:
